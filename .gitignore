@@ -1,0 +1,24 @@
+# build output
+build/
+build-hot/
+bin/
+bin-hot/
+*.obj
+*.pdb
+*.exp
+*.lib
+*.ilk
+
+# release archives are attached to GitHub releases / Nexus, not committed
+dist/*.zip
+
+# local working notes and backups
+HANDOFF-*.md
+AGENTS.md
+HOTLOADING.md
+*.bak
+src/*.bak
+
+# measurements and tools that need a private development bridge
+tools/performance/
+tools/*.mjs

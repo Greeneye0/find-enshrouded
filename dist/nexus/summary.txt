@@ -1,0 +1,1 @@
+Press Shift+F in your base and type an item, a kind of item or a chest name: the chests that hold it light up, and inside them the items glow gold. Native-looking search box, suggestions as you type, follows the game's language.
