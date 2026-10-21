@@ -67,6 +67,8 @@ struct Dialog;
 Dialog* NewDialog(const char* title, const char* confirm);
 // Draws the dialog for this frame. Returns 0 while open, 1 when cancelled, 2 when confirmed.
 int DrawDialog(Dialog* d);
+void ReleaseDialogInput();
+void RecoverDialogInput();
 // The text typed so far.
 const char* DialogText(Dialog* d, size_t* len);
 // Replaces the text in the field.

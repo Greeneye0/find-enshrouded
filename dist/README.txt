@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.0.0
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.0.1
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -73,5 +73,3 @@ GOOD TO KNOW
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
 - find.log in the game folder says what the mod did.
-- Not covered yet: a chest's pulse can be hidden behind walls and floors, so in a base with
-  several floors look around a little.

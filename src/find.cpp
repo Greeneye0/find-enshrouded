@@ -771,6 +771,7 @@ bool g_escapeWasDown = false;
 
 void CloseSearch(const char* why)
 {
+    ui::ReleaseDialogInput();
     g_open = false;
     LockCamera(false);
     CatchWheel(false);
@@ -925,10 +926,24 @@ void Tick()
     char request[128]{};
     bool pending;
     AcquireSRWLockExclusive(&g_requestLock);
-    pending = g_requestPending && !g_open;
+    pending = g_requestPending && (!g_open || !strcmp(g_request, "@dev-recover-ui") || !strcmp(g_request, "@dev-input-state"));
     if (pending) { memcpy(request, g_request, sizeof(request)); g_requestPending = false; }
     ReleaseSRWLockExclusive(&g_requestLock);
     if (pending) {
+        if (!strcmp(request, "@dev-input-state") || !strcmp(request, "@dev-recover-ui")) {
+            Log("input diagnostic: screen=%d search=%d openedScreen=%d camera=%p wheel=%p escape=%d",
+                Screen(), g_open, g_openedInventory, g_lockedWindow, g_wheelWindow,
+                (GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0);
+            if (!strcmp(request, "@dev-recover-ui")) {
+                // Explicit bridge recovery only; never an automatic Escape override.
+                if (Screen() == kScreenPlaying || Screen() == kScreenInventory || Screen() == 10) ui::RecoverDialogInput();
+                CloseSearch(" (bridge recovery)");
+                g_openPending=false;
+                g_escapeWasDown=false;
+                OpenScreen(kScreenPlaying);
+            }
+            return;
+        }
         if (!request[0]) { g_glows.clear(); Unlight(); }
         else { g_index = BuildIndex(); Search(request); }
         return;
@@ -1004,17 +1019,18 @@ void Tick()
     // The screen the search opened was closed (Escape): close with it.
     // (Only once it was there: a screen that closes itself right away must not close the search.)
     bool escape = GameFocused() && (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-    if (escape && !g_escapeWasDown)
-        g_escapeAt = GetTickCount64();
+    bool escapePressed = escape && !g_escapeWasDown;
+    if (escapePressed) g_escapeAt = GetTickCount64();
     g_escapeWasDown = escape;
-    if (g_openedInventory && g_screenReached && Screen() != kScreenBehindSearch && GetTickCount64() - g_openedAt > 500) {
-        CloseSearch(" (screen closed)");
+    g_step = "dialog";
+    // Let the native field process cancel/deactivate before retiring the dialog.
+    int r = ui::DrawDialog(g_dialog);
+    if (escapePressed || r == 1) {
+        CloseSearch(escapePressed ? " (Escape)" : " (cancelled)");
         return;
     }
-    g_step = "dialog";
-    int r = ui::DrawDialog(g_dialog);
-    if (r == 1) {
-        CloseSearch(" (cancelled)");
+    if (g_openedInventory && g_screenReached && Screen() != kScreenBehindSearch && GetTickCount64() - g_openedAt > 500) {
+        CloseSearch(" (screen closed)");
         return;
     }
     size_t len;
@@ -1223,8 +1239,11 @@ void PlayStateHook(void* self)
 }
 void PlayStateHookBody(void* self)
 {
-    g_originalPlayState(self);
+    // The native dialog participates in UI input routing. Let the game's normal
+    // menu pass run afterward rather than leaving Find as the final UI consumer.
+    // Live verification must cover subsequent menus as well as closing Find.
     SafeTick();
+    g_originalPlayState(self);
 }
 
 void CommandLoopHookBody(void* app);

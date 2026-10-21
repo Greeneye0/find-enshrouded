@@ -80,6 +80,10 @@ FieldStateFn g_originalFieldState = nullptr;
 SetEditTextFn g_setEditText = nullptr;
 constexpr uint64_t kTextFieldId = 0x64d2790860d9c7f6ull;
 constexpr size_t kStateEdit = 0x10;
+using CloseKeyboardFn = void (*)(void*, uint32_t);
+CloseKeyboardFn g_closeKeyboard = nullptr;
+uint8_t* g_findEditState = nullptr;
+uint8_t* g_findEditOwner = nullptr;
 Dialog* g_drawing = nullptr; // the Find dialog while it draws
 EndWidgetFn g_originalEnd = nullptr;
 BeginLabelFn g_beginLabel = nullptr;
@@ -167,6 +171,11 @@ void CopyRect(const void* widget, float out[4])
 uint8_t* FieldStateHookBody(void* field, uint64_t id, uint32_t create)
 {
     uint8_t* state = g_originalFieldState(field, id, create);
+    if (g_drawing && id == kTextFieldId && state) {
+        g_findEditState = state;
+        auto root = static_cast<uint8_t*>(G());
+        g_findEditOwner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+    }
     if (g_drawing && id == kTextFieldId && field) {
         CopyRect(field, g_fieldRect);
         // The lines come after the field: bars drawn now sit behind their text (positions are
@@ -586,6 +595,7 @@ bool Init()
     ok &= Find(g_dialog, "TextDialog", "48 8B C4 55 53 41 55 41 56 48 8D A8 18 F5 FF FF");
     ok &= Find(g_dialogInit, "DialogInit", "48 83 EC 28 0F 10 0D ?? ?? ?? ?? 48 C7 41 30 0A 00 00 00");
     ok &= Find(g_locaText, "LocaText", "48 89 5C 24 10 48 89 74 24 18 55 57 41 55 41 56 41 57 48 8D AC 24 F0 F8 FF FF");
+    g_closeKeyboard = reinterpret_cast<CloseKeyboardFn>(FindUnique("48 89 5C 24 08 48 89 74 24 18 89 54 24 10 57 48 83 EC 50 0F 10 05 ?? ?? ?? ?? 8B C2 C7 44 24 20 27 00 00 00 83 E0 0F"));
     // Optional: item icons that light up (see HighlightIcons).
     if (!HookIcons())
         Log("signatures: image/draw - found items in an open chest do not light up");
@@ -858,6 +868,43 @@ int DrawDialog(Dialog* d)
     if (r == 0 && d->cancel[7])
         r = 1;
     return r;
+}
+
+// Native text editor (140d36070) publishes edit-active to UI owner +0x2fe70.
+// Stopping dialog draws alone leaves that flag set after an external close.
+void ReleaseDialogInput()
+{
+    __try {
+        auto root = static_cast<uint8_t*>(G());
+        auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+        if (g_findEditState && owner && owner == g_findEditOwner &&
+            *reinterpret_cast<void**>(owner) && g_findEditState[0x1988]) {
+            if (g_findEditState[0x1989] && g_closeKeyboard) {
+                g_closeKeyboard(*reinterpret_cast<void**>(g_findEditState),
+                    *reinterpret_cast<uint32_t*>(g_findEditState + 8));
+                g_findEditState[0x1989] = 0;
+            }
+            g_findEditState[0x1988] = 0;
+            Log("dialog: releasing Find text input (shared flag %u)", owner[0x2fe70]);
+            owner[0x2fe70] = 0;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { Log("dialog: text input cleanup unavailable"); }
+    g_findEditState = nullptr;
+    g_findEditOwner = nullptr;
+    g_pending.set = false;
+}
+
+// Explicit bridge recovery for an already abandoned field in the backpack.
+void RecoverDialogInput()
+{
+    __try {
+        auto root = static_cast<uint8_t*>(G());
+        auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+        if (owner && *reinterpret_cast<void**>(owner)) {
+            Log("dialog: explicit recovery, shared text input flag %u", owner[0x2fe70]);
+            owner[0x2fe70] = 0;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { Log("dialog: recovery unavailable"); }
 }
 
 const char* DialogText(Dialog* d, size_t* len)
