@@ -87,6 +87,9 @@ CHANGES
 - Inside a base without storage chests, Find says "This base has no storage chests to
   search." instead of claiming you are not in a base.
 - Outside a base the search field is switched off; Enter or Esc closes it.
+Reported bugs fixed:
+- Find inactive next to Creative Mode (reported by Dacrenzio, cnrat and Bigdaddy2I42).
+- "Not in a base" shown in a base that has no storage chests (reported by GreeneyeDS).
 
 1.0.1
 - Esc hands the keyboard back to the game.
