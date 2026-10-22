@@ -594,7 +594,18 @@ bool Init()
     ok &= Find(g_drawImage, "DrawImage", "4D 8B 09 45 8B 00 E9 ?? ?? ?? ?? CC");
     ok &= Find(g_dialog, "TextDialog", "48 8B C4 55 53 41 55 41 56 48 8D A8 18 F5 FF FF");
     ok &= Find(g_dialogInit, "DialogInit", "48 83 EC 28 0F 10 0D ?? ?? ?? ?? 48 C7 41 30 0A 00 00 00");
-    ok &= Find(g_locaText, "LocaText", "48 89 5C 24 10 48 89 74 24 18 55 57 41 55 41 56 41 57 48 8D AC 24 F0 F8 FF FF");
+    // Creative Mode hooks the text lookup; Find only calls it (through that hook, as the game
+    // does), so it is also found by the code after its first 18 bytes.
+    g_locaText = reinterpret_cast<LocaTextFn>(FindUnique("48 89 5C 24 10 48 89 74 24 18 55 57 41 55 41 56 41 57 48 8D AC 24 F0 F8 FF FF"));
+    if (!g_locaText) {
+        uint8_t* after = FindUnique("48 8D AC 24 F0 F8 FF FF 48 81 EC 10 08 00 00 4C 8B F1 48 C7 85 F0 00 00 00 40 00 00 00");
+        if (after && IsHookPatch(after - 18))
+            g_locaText = reinterpret_cast<LocaTextFn>(after - 18);
+    }
+    if (!g_locaText) {
+        Log("signature not found: LocaText");
+        ok = false;
+    }
     g_closeKeyboard = reinterpret_cast<CloseKeyboardFn>(FindUnique("48 89 5C 24 08 48 89 74 24 18 89 54 24 10 57 48 83 EC 50 0F 10 05 ?? ?? ?? ?? 8B C2 C7 44 24 20 27 00 00 00 83 E0 0F"));
     // Optional: item icons that light up (see HighlightIcons).
     if (!HookIcons())
@@ -870,21 +881,38 @@ int DrawDialog(Dialog* d)
     return r;
 }
 
+namespace {
+// Ends the field's edit (+0x1988 editing, +0x1989 on-screen keyboard) as the field itself
+// would; the caret goes away. Returns the UI owner when the field is Find's, else null.
+uint8_t* EndFieldEdit()
+{
+    auto root = static_cast<uint8_t*>(G());
+    auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+    if (!g_findEditState || !owner || owner != g_findEditOwner || !*reinterpret_cast<void**>(owner))
+        return nullptr;
+    if (g_findEditState[0x1988]) {
+        if (g_findEditState[0x1989] && g_closeKeyboard) {
+            g_closeKeyboard(*reinterpret_cast<void**>(g_findEditState),
+                *reinterpret_cast<uint32_t*>(g_findEditState + 8));
+            g_findEditState[0x1989] = 0;
+        }
+        g_findEditState[0x1988] = 0;
+    }
+    return owner;
+}
+}
+
+void DisableDialogField()
+{
+    __try { EndFieldEdit(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 // Native text editor (140d36070) publishes edit-active to UI owner +0x2fe70.
 // Stopping dialog draws alone leaves that flag set after an external close.
 void ReleaseDialogInput()
 {
     __try {
-        auto root = static_cast<uint8_t*>(G());
-        auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
-        if (g_findEditState && owner && owner == g_findEditOwner &&
-            *reinterpret_cast<void**>(owner) && g_findEditState[0x1988]) {
-            if (g_findEditState[0x1989] && g_closeKeyboard) {
-                g_closeKeyboard(*reinterpret_cast<void**>(g_findEditState),
-                    *reinterpret_cast<uint32_t*>(g_findEditState + 8));
-                g_findEditState[0x1989] = 0;
-            }
-            g_findEditState[0x1988] = 0;
+        if (auto owner = EndFieldEdit(); owner && owner[0x2fe70]) {
             Log("dialog: releasing Find text input (shared flag %u)", owner[0x2fe70]);
             owner[0x2fe70] = 0;
         }

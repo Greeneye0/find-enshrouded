@@ -291,23 +291,33 @@ bool Init()
     ok &= Find(viewInit, "ViewInit", "41 56 41 57 48 83 EC 60 4C 8B 09 48 8B D9");
     ok &= Find(getEntityComponent, "GetEntityComponent", "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC 4C 8B D1");
     ok &= Find(getEntity, "GetEntity", "40 53 48 83 EC 20 48 8B 01 89 54 24 38 48 8D 54 24 38 48 8B 58 30 48 8D 8B 48 01 00 00 E8 ?? ?? ?? ?? 48 3B 83 58 01 00 00 73 ?? 48 8B 8B 88 01 00 00 48 8D 04 C1 48 85 C0 74 ?? 48 8B 00 48 83 C4 20 5B C3 33 C0 48 83 C4 20 5B C3 CC CC CC CC 40 53");
-    ok &= Find(itemLookup, "ItemInfoLookup", "48 8D 4A 38 48 8D 54 24 30 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 00");
+    // Creative Mode hooks the item lookup too; safetyhook's 14-byte jump would also cover the
+    // code at +12, so it is also found by the code after its first 16 bytes.
+    itemLookup = FindUnique("48 8D 4A 38 48 8D 54 24 30 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 00");
+    if (itemLookup) {
+        itemLookup -= 12;
+    } else if (uint8_t* after = FindUnique("48 8D 54 24 30 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 00 48 83 C4 28 C3");
+               after && IsHookPatch(after - 16)) {
+        itemLookup = after - 16;
+    } else {
+        Log("signature not found: ItemInfoLookup");
+        ok = false;
+    }
     if (!ok)
         return false;
     viewInit -= 12;
-    itemLookup -= 12;
     static const uint8_t viewInitPrologue[] = {0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55};
-    if (!IsAbsJumpPatch(viewInit) && !hot::Equal(viewInit, viewInitPrologue, sizeof(viewInitPrologue))) {
+    if (!IsHookPatch(viewInit) && !hot::Equal(viewInit, viewInitPrologue, sizeof(viewInitPrologue))) {
         Log("ViewInit: unexpected start");
         return false;
     }
-    bool chained = IsAbsJumpPatch(viewInit) || IsAbsJumpPatch(itemLookup);
-    if (IsAbsJumpPatch(itemLookup))
+    bool chained = IsHookPatch(viewInit) || IsHookPatch(itemLookup);
+    if (IsHookPatch(itemLookup))
         g_originalItemLookup = static_cast<ItemInfoLookupFn>(InstallHookChained(itemLookup, reinterpret_cast<void*>(&ItemLookupHook)));
     else
         g_originalItemLookup = static_cast<ItemInfoLookupFn>(HookItemLookup(itemLookup));
     g_originalViewInit = static_cast<ViewInitFn>(InstallHookChained(viewInit, reinterpret_cast<void*>(&ViewInitHook), 12));
-    Log("inventory hooks %s", chained ? "chained with another mod's (Quick Deposit)" : "installed");
+    Log("inventory hooks %s", chained ? "chained with another mod's (Quick Deposit, Creative Mode)" : "installed");
     if (!g_originalItemLookup || !g_originalViewInit) {
         Log("inventory hooks failed");
         return false;

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <vector>
 #include "scan.h"
+#include "jumppatch.h"
 #include "log.h"
 
 static bool TextSection(void* module, uint8_t*& start, size_t& size)
@@ -56,6 +57,20 @@ template <class F> static bool ForEachMatch(const char* pattern, void* module, F
     return true;
 }
 
+// A function whose first instructions another mod's hook replaced (see jumppatch.h).
+static uint8_t* FindBehindHook(const char* pattern, void* module)
+{
+    std::vector<int> bytes = ParsePattern(pattern);
+    uint8_t* text;
+    size_t size;
+    if (bytes.empty() || !TextSection(module, text, size))
+        return nullptr;
+    uint8_t* p = jumppatch::FindBehindHook(text, size, bytes.data(), bytes.size());
+    if (p)
+        Log("found a function behind another mod's hook at %p", p);
+    return p;
+}
+
 uint8_t* FindUnique(const char* pattern, void* module)
 {
     if (hot::host) return hot::host->find(pattern, module);
@@ -69,6 +84,8 @@ uint8_t* FindUnique(const char* pattern, void* module)
         found = p;
         return true;
     });
+    if (!found)
+        found = FindBehindHook(pattern, module);
     return unique ? found : nullptr;
 }
 
@@ -148,20 +165,22 @@ bool IsAbsJumpPatch(const uint8_t* target)
     return target[0] == 0x48 && target[1] == 0xB8 && target[10] == 0xFF && target[11] == 0xE0;
 }
 
+bool IsHookPatch(const uint8_t* target)
+{
+    uint8_t canonical[12];
+    if (hot::host) { hot::Read(target, canonical, sizeof(canonical)); target = canonical; }
+    return jumppatch::KindOf(target) != jumppatch::None;
+}
+
 void* InstallHookChained(uint8_t* target, void* detour, size_t length)
 {
     if (hot::host) { auto result=hot::host->hook(target, detour, length, target, length); if(!result) Log("hot: rejected chained hook %p length %zu",target,length); return result; }
-    if (!IsAbsJumpPatch(target))
+    if (!IsHookPatch(target))
         return InstallHook(target, detour, length);
-    // Another mod's "mov rax, imm64; jmp rax" is already here: point it at detour and hand
-    // back its previous destination, which leads (through that mod) to the original code.
-    void* previous;
-    memcpy(&previous, target + 2, sizeof(previous));
-    DWORD old;
-    if (!VirtualProtect(target, 12, PAGE_EXECUTE_READWRITE, &old))
+    // Another mod's jump is already here: point it at detour and hand back its previous
+    // destination, which leads (through that mod) to the original code.
+    void* previous = jumppatch::Destination(target);
+    if (!previous || !jumppatch::Redirect(target, detour))
         return nullptr;
-    memcpy(target + 2, &detour, sizeof(detour));
-    VirtualProtect(target, 12, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), target, 12);
     return previous;
 }

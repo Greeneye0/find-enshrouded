@@ -1043,9 +1043,11 @@ void Tick()
     size_t len;
     const char* raw = ui::DialogText(g_dialog, &len);
     std::string text(raw ? raw : "", raw ? len : 0);
-    // Outside a base there is nothing to search: the field stays empty and Enter closes.
+    // Outside a base there is nothing to search: the field is switched off (no caret, nothing
+    // typed) and Enter closes.
     if (!g_index.ok) {
-        if (r == 2) {
+        ui::DisableDialogField();
+        if (r == 2 || Edge(4, focused && held(VK_RETURN))) {
             CloseSearch(" (not in a base)");
             return;
         }
@@ -1426,9 +1428,10 @@ bool Init(const Hotkey& hotkey)
     g_nativeReady = nativehighlight::Init();
     uint8_t* playState = FindUnique("4C 8B DC 55 49 8D AB E8 FD FF FF 48 81 EC 10 03 00 00");
     if (!playState) {
-        // Auto Loot may have put its 18-byte jump there already: find the code after it.
+        // Auto Loot (18-byte jump) or Creative Mode (safetyhook) may have hooked it already:
+        // find the code after the first 18 bytes, which neither overwrites.
         uint8_t* after = FindUnique("48 8B 05 ?? ?? ?? ?? 48 8B 88 D0 00 00 00 48 8B 01 48 85 C0 0F 84 ?? ?? ?? ?? 4D 89 73 C8 4C 8B 70 38");
-        if (after && IsAbsJumpPatch(after - 18))
+        if (after && IsHookPatch(after - 18))
             playState = after - 18;
     }
     uint8_t* spatial = FindUnique("48 89 54 24 10 55 57 41 56 48 8D AC 24 00 FE FF FF");
@@ -1452,7 +1455,7 @@ bool Init(const Hotkey& hotkey)
     g_dispatch = reinterpret_cast<UiDispatchFn>(FindUnique("4C 8B DC 55 56 57 49 8D AB 18 FF FF FF 48 81 EC D0 01 00 00"));
     if (!g_dispatch) {
         uint8_t* after = FindUnique("48 81 EC D0 01 00 00 0F B6 02 48 8B F2 FF C8 48 8B F9");
-        if (after && IsAbsJumpPatch(after - 13))
+        if (after && IsHookPatch(after - 13))
             g_dispatch = reinterpret_cast<UiDispatchFn>(after - 13);
     }
     if (!g_dispatch)

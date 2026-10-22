@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.0.1
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.0.2
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -68,8 +68,28 @@ GOOD TO KNOW
 - Client-side only. Servers need nothing installed, and other players do not need the mod.
 - Only reads your chests: it never moves, adds or removes items.
 - Works next to other mods: it has its own DLL name and forwards every Winsock call to the
-  real Windows wsock32.dll.
+  real Windows wsock32.dll. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
+  hooks the same game function, Find chains onto its hook instead of replacing it.
 - Made for the current game version (build 1273043). After a game update the mod checks
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
 - find.log in the game folder says what the mod did.
+
+
+CHANGES
+-------
+1.0.2
+- Works with Creative Mode. Find 1.0.1 switched itself off next to it ("signature not
+  found: LocaText" in find.log); it now finds the game functions Creative Mode hooks and
+  chains onto its hooks.
+- Finds a game function another mod has already hooked by the code behind that mod's
+  hook, so load order between mods matters less.
+- Inside a base without storage chests, Find says "This base has no storage chests to
+  search." instead of claiming you are not in a base.
+- Outside a base the search field is switched off; Enter or Esc closes it.
+
+1.0.1
+- Esc hands the keyboard back to the game.
+
+1.0.0
+- First release.

@@ -1,0 +1,4 @@
+Works with Creative Mode: 1.0.1 switched itself off next to it ("signature not found: LocaText"); Find now finds the game functions Creative Mode hooks and chains onto its hooks.
+Finds a game function another mod has already hooked by the code behind that hook, so load order between mods matters less.
+Inside a base without storage chests, Find says "This base has no storage chests to search." instead of claiming you are not in a base.
+Outside a base the search field is switched off; Enter or Esc closes it.

@@ -27,7 +27,11 @@ void* InstallHook(uint8_t* target, void* detour, size_t length, const uint8_t* p
 // True if target starts with a "mov rax, imm64; jmp rax" patch (another mod's hook).
 bool IsAbsJumpPatch(const uint8_t* target);
 
-// InstallHook that coexists with another mod's hook of the same function (such as Quick
-// Deposit's): if target already starts with "mov rax, imm64; jmp rax", the jump is pointed at
-// detour and its previous destination is returned as the function to call on.
+// True if target starts with any hook jump another mod is known to write: the above, or
+// safetyhook's "jmp rel32" / "jmp [rip+disp32]" (Creative Mode). See jumppatch.h.
+bool IsHookPatch(const uint8_t* target);
+
+// InstallHook that coexists with another mod's hook of the same function (Quick Deposit's,
+// Creative Mode's): if target already starts with a hook jump, the jump is pointed at detour
+// and its previous destination is returned as the function to call on.
 void* InstallHookChained(uint8_t* target, void* detour, size_t length = 12);

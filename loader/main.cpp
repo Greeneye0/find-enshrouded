@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include "../src/hotapi.h"
+#include "../src/jumppatch.h"
 bool LoadProxyTargets();
 namespace {
 struct Slot { uint8_t* target; size_t length; uint8_t saved[32], patch[32]; uint8_t* thunk; void* base; void* pending; bool seen; };
@@ -67,7 +68,20 @@ void* Hook(uint8_t* target,void* detour,size_t n,const uint8_t* code,size_t code
     // Runtime additions require a restart. Never patch executing game instructions.
     if(!initial){failed=true;return nullptr;}
     auto s=std::make_unique<Slot>(); s->target=target;s->length=n;memcpy(s->saved,target,n);
-    bool chained=target[0]==0x48 && target[1]==0xb8 && target[10]==0xff && target[11]==0xe0;
+    auto kind=jumppatch::KindOf(target);
+    if(kind==jumppatch::Rel32 || kind==jumppatch::RipIndirect) {
+        // safetyhook (Creative Mode): its trampoline returns into the bytes after its jump, so
+        // only the jump's operand is redirected (to the thunk); nothing else is overwritten.
+        s->base=jumppatch::Destination(target);
+        s->thunk=static_cast<uint8_t*>(VirtualAlloc(nullptr,32,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE));
+        if(!s->base || !s->thunk){failed=true;return nullptr;}
+        s->thunk[0]=0xff;s->thunk[1]=0x25;int32_t displacement=10;memcpy(s->thunk+2,&displacement,4);
+        memcpy(s->thunk+16,&s->base,8);FlushInstructionCache(GetCurrentProcess(),s->thunk,32);
+        if(!jumppatch::Redirect(target,s->thunk)){failed=true;return nullptr;}
+        memcpy(s->patch,target,n);s->pending=detour;s->seen=true;
+        auto result=s->base;slots.push_back(std::move(s));return result;
+    }
+    bool chained=kind==jumppatch::MovRax;
     if(chained)memcpy(&s->base,target+2,8);
     else {
         auto t=static_cast<uint8_t*>(VirtualAlloc(nullptr,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE));
