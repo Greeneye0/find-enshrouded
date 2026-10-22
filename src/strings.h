@@ -22,6 +22,7 @@ enum Id {
     FishingRods,
     AnimalFood,
     WeaponGems,
+    NoChests,       // inside a base without storage chests
     Count
 };
 

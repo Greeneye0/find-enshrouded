@@ -158,6 +158,7 @@ struct Entry {
 
 struct Index {
     bool ok = false;
+    bool inBase = false; // !ok only because the base has no storage chests
     std::string why;
     std::vector<Entry> entries;
     std::map<uint32_t, std::vector<float>> positions; // chest -> x, y, z
@@ -278,8 +279,12 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
         if (ids[i])
             magic.push_back(ids[i]);
     out = magic;
-    if (magic.empty() || !inv::Ready(playerId, magic[0]))
-        return !out.empty();
+    if (magic.empty()) {
+        why = "no storage chests in this base";
+        return false;
+    }
+    if (!inv::Ready(playerId, magic[0]))
+        return true;
     std::vector<uint32_t> found(kMaxChests);
     int nf = inv::FindContainers(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), found.data(), kMaxChests);
     nf = inv::KeepStorageChests(magic.data(), static_cast<int>(magic.size()), found.data(), nf);
@@ -442,8 +447,10 @@ Index BuildIndex()
     Index ix;
     std::vector<uint32_t> chests;
     g_step = "base chests";
-    if (!BaseChests(chests, ix.why))
+    if (!BaseChests(chests, ix.why)) {
+        ix.inBase = ix.why == "no storage chests in this base";
         return ix;
+    }
     ix.ok = true;
     ix.chestCount = static_cast<int>(chests.size());
     void* client = GameClient();
@@ -618,7 +625,7 @@ void ShowMessage()
     if (!g_notice.empty()) {
         lines.push_back(g_notice);
     } else if (!g_index.ok) {
-        lines.push_back(strings::Get(strings::NotInBase));
+        lines.push_back(strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase));
     } else if (Trim(g_typed).empty()) {
         lines.push_back(strings::Get(strings::TypePrompt));
     } else if (g_suggested.empty()) {
@@ -837,7 +844,7 @@ bool Search(const std::string& text, bool picked = false)
     if (q.empty())
         return false;
     if (!g_index.ok) {
-        g_notice = strings::Get(strings::NotInBase);
+        g_notice = strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase);
         Log("find '%s': %s", q.c_str(), g_index.why.c_str());
         return false;
     }
