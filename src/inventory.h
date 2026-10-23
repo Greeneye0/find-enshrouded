@@ -47,8 +47,13 @@ struct ItemDesc {
 bool Init();
 
 // True once the client's registry and the InventorySetup type are known. Picks the registry
-// that knows both the local player and probeChest (any chest of the base).
-bool Ready(uint32_t playerId, uint32_t probeChest);
+// that knows the local player and one of the probes (the base's chests), else the one holding
+// the player's own inventories.
+bool Ready(uint32_t playerId, const uint32_t* probes, int probeCount);
+
+// Forgets the registries when the client's world changes (you left it, or joined another), so
+// the next world's are learned and identified afresh.
+void ForgetOnWorldChange(void* world);
 
 // Reads an inventory owner. Returns false if the client doesn't know the entity.
 bool ReadOwner(uint32_t entity, Owner& out);

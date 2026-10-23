@@ -325,28 +325,65 @@ bool Init()
     return true;
 }
 
-bool Ready(uint32_t playerId, uint32_t probeChest)
+void Forget()
 {
-    if (g_registry && g_typeSetup)
-        return true;
-    int seen = 0;
-    for (auto& slot : g_seen) {
-        void* reg = slot.load();
-        if (!reg)
-            continue;
-        ++seen;
-        uint16_t tmp[1];
-        if (EntityTypes(reg, playerId, tmp, 1) < 0 || EntityTypes(reg, probeChest, tmp, 1) < 0)
-            continue;
-        uint16_t setup = DetectSetupType(reg, probeChest);
-        if (!setup)
-            continue;
-        g_registry = reg;
-        g_typeSetup = setup;
-        Log("client registry %p (of %d seen), InventorySetup type %u, %d item databases", reg, seen, setup, ItemDbCount());
-        return true;
+    g_registry = nullptr;
+    g_typeSetup = 0;
+    g_typeHotbar = 0;
+    for (auto& slot : g_seen)
+        slot.store(nullptr);
+}
+
+void ForgetOnWorldChange(void* world)
+{
+    static void* last = nullptr;
+    if (world == last)
+        return;
+    if (last && g_registry) {
+        Forget();
+        Log("another world: client registry forgotten");
     }
-    Log("client registry not identified (%d registries seen, %d item databases)", seen, ItemDbCount());
+    last = world;
+}
+
+bool Ready(uint32_t playerId, const uint32_t* probes, int probeCount)
+{
+    if (g_registry && g_typeSetup) {
+        uint16_t tmp[1];
+        if (EntityTypes(g_registry, playerId, tmp, 1) >= 0)
+            return true;
+        Log("client registry no longer knows you (another world?) - looking again");
+        g_registry = nullptr;
+        g_typeSetup = 0;
+        g_typeHotbar = 0;
+    }
+    // Any chest of the base the client knows tells the registries apart (the first may be too far
+    // away to be loaded); without one, your own pages: only the client registry holds their
+    // inventories.
+    int seen = 0;
+    for (int p = 0; p <= probeCount; ++p) {
+        uint32_t probe = p < probeCount ? probes[p] : playerId;
+        seen = 0;
+        for (auto& slot : g_seen) {
+            void* reg = slot.load();
+            if (!reg)
+                continue;
+            ++seen;
+            uint16_t tmp[1];
+            if (EntityTypes(reg, playerId, tmp, 1) < 0 || EntityTypes(reg, probe, tmp, 1) < 0)
+                continue;
+            uint16_t setup = DetectSetupType(reg, probe);
+            if (!setup)
+                continue;
+            g_registry = reg;
+            g_typeSetup = setup;
+            Log("client registry %p (of %d seen) by %s %u, InventorySetup type %u, %d item databases", reg, seen,
+                p < probeCount ? "chest" : "your own pages", probe, setup, ItemDbCount());
+            return true;
+        }
+    }
+    Log("client registry not identified (%d registries seen, %d chests tried, %d item databases)", seen, probeCount,
+        ItemDbCount());
     return false;
 }
 

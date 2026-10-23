@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.0
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.1
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.1
+- Fixed: in a base where your game had not loaded the base's first chest yet (a large base,
+  often on a server), every search found nothing. Find now tries every chest of the base,
+  then your own backpack.
+- Fixed: after switching worlds without restarting the game (your own world, then a server),
+  Find searched the old world and found nothing.
+
 1.1.0
 - Runs through the Greeneye Loader (dbgcore.dll), shared with Quick Deposit, Continue and
   Auto Loot. find.ini and find.log now live in greeneye\find\.

@@ -251,6 +251,7 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 {
     void* client = GameClient();
     auto* world = client ? At<uint8_t*>(client, kClientWorld) : nullptr;
+    inv::ForgetOnWorldChange(world);
     if (!world) {
         why = "not in a world";
         return false;
@@ -288,7 +289,7 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
         why = "no storage chests in this base";
         return false;
     }
-    if (!inv::Ready(playerId, magic[0]))
+    if (!inv::Ready(playerId, magic.data(), static_cast<int>(magic.size())))
         return true;
     std::vector<uint32_t> found(kMaxChests);
     int nf = inv::FindContainers(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), found.data(), kMaxChests);
