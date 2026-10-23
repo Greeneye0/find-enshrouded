@@ -105,6 +105,11 @@ int main()
     ok &= Check("7", ParseHotkey("7", h) && h.key == '7');
     ok &= Check("rejects Hyper+F", !ParseHotkey("Hyper+F", h));
     ok &= Check("rejects empty and F99", !ParseHotkey("", h) && !ParseHotkey("F99", h));
+    float v = 0;
+    ok &= Check("number 180", ParseNumber(" 180 ", 10, 3600, v) && v == 180.0f);
+    ok &= Check("number 2.5", ParseNumber("2.5", 0.5f, 20, v) && v == 2.5f);
+    ok &= Check("rejects 3 min, out of range and empty",
+                !ParseNumber("3 min", 10, 3600, v) && !ParseNumber("5", 10, 3600, v) && !ParseNumber("", 0, 60, v));
 
     HMODULE proxy = LoadLibraryW(L"..\\..\\bin\\wsock32.dll");
     auto inetAddr = proxy ? reinterpret_cast<unsigned long(__stdcall*)(const char*)>(GetProcAddress(proxy, "inet_addr")) : nullptr;

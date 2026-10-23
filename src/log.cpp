@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <share.h>
 #include "log.h"
+#include "../../common/greeneye.h"
 
 static CRITICAL_SECTION g_logLock;
 static bool g_logReady = false;
@@ -12,7 +13,7 @@ void LogInit()
 {
     InitializeCriticalSection(&g_logLock);
     g_logReady = true;
-    g_logFile = _fsopen("find.log", "a", _SH_DENYNO);
+    g_logFile = _fsopen(greeneye::DataPath("find.log"), "a", _SH_DENYNO);
 }
 
 void Log(const char* fmt, ...)

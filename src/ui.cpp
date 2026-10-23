@@ -464,18 +464,14 @@ void SlotHookBody(uint8_t** slot, void* style, void* extra)
     g_slotLit = outerLit;
 }
 
-// ABI 1 identifies startup through its documented shadow-copy name. Optional new
-// hook sites must wait for startup instead of poisoning a live reload transaction.
+// A new hook site is only possible in the first generation (the loader refuses a reload that
+// adds one). Optional new hook sites must wait for a restart instead of poisoning a reload.
 // Existing managed sites differ from their canonical original bytes.
 bool SlotHookAvailable(uint8_t* target) {
     if (!hot::host) return true;
     uint8_t original[13]; hot::Read(target,original,sizeof(original));
     if (memcmp(target,original,sizeof(original)) != 0) return true;
-    HMODULE module=nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<const wchar_t*>(&SlotHookAvailable),&module)) return false;
-    wchar_t path[MAX_PATH]; DWORD n=GetModuleFileNameW(module,path,MAX_PATH);
-    return n>=6 && n<MAX_PATH && _wcsicmp(path+n-6,L".1.dll")==0;
+    return hot::host->generation == 1;
 }
 
 bool HookIcons()

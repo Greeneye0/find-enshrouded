@@ -81,10 +81,9 @@ constexpr size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
 constexpr uint8_t kCategoryBlueprints = 10;
 constexpr size_t kItemPerkIds = 0x658;  // ItemInfo: PerkId[5], the perks its upgrades unlock
 constexpr size_t kUiClientPerks = 0x466800; // UI client: the perk registry (as the item tooltip uses it)
-constexpr ULONGLONG kGlowLifetimeMs = 5 * 60 * 1000; // a glow lasts until the next search, at most 5 min,
+// A glow lasts until the next search, at most glow_seconds (find.ini), or until you come within
+// near_meters (3D) and then near_seconds more.
 constexpr float kLeftMeters = 120.0f;                // farther than this: you left the base, the glow ends
-constexpr float kArrivedMeters = 2.5f;               // or until you come this close (3D)...
-constexpr ULONGLONG kAfterArrivalMs = 3000;          // ...and then 3 more seconds
 constexpr ULONGLONG kMinGlowMs = 2000;               // chests right next to you still show for a moment
 constexpr ULONGLONG kFadeOutMs = 600;
 constexpr float kChestCentre = 0.5f; // chest origin is at its bottom; chests stack 1 m apart
@@ -104,7 +103,7 @@ constexpr float kOpenedChestMeters = 5.0f;   // an opened chest window belongs t
 constexpr ULONGLONG kChestWindowGapMs = 400; // a longer gap between chest window frames: opened anew
 constexpr uint32_t kIconColour = 0xFF3CC8FF; // bright gold (0xAABBGGRR)
 constexpr ULONGLONG kIconPulseMs = 1200;
-constexpr ULONGLONG kIconShowMs = 5000; // found items light up for this long each time a chest opens
+constexpr ULONGLONG kIconShowMs = 5000; // found items light up for this long, the first time each found chest opens
 
 template <class T> T& At(void* base, size_t offset)
 {
@@ -126,9 +125,11 @@ void* GameClient()
 struct Glow {
     float pos[3];
     uint32_t chest;
-    ULONGLONG arrived; // 0 until you came within kArrivedMeters
+    ULONGLONG arrived; // 0 until you came within g_arrivedMeters
+    bool shown;        // g_found: its items already lit up once in its window
 };
 std::vector<Glow> g_glows;
+std::vector<Glow> g_found; // every chest of the search, kept after its glow ends
 ULONGLONG g_glowsUntil = 0;
 ULONGLONG g_glowsStart = 0;
 ULONGLONG g_lastGlowDraw = 0;
@@ -166,6 +167,9 @@ struct Index {
 };
 
 Hotkey g_hotkey;
+ULONGLONG g_glowLifetimeMs = 180000;
+float g_arrivedMeters = 2.5f;
+ULONGLONG g_afterArrivalMs = 3000;
 ui::Dialog* g_dialog = nullptr;
 const char* volatile g_step = "";
 bool g_open = false;
@@ -179,6 +183,7 @@ std::vector<uint32_t> g_foundItems; // the items of the last search, lit in an o
 ULONGLONG g_chestWindowAt = 0;      // the last frame the chest window drew
 ULONGLONG g_lastIconLog = 0;
 ULONGLONG g_windowOpenedAt = 0;
+bool g_lightThisWindow = false; // this chest window lights the found items (its first opening)
 bool g_traced = false, g_tracePending = false;
 bool g_keyWasDown = false;
 Index g_index;
@@ -819,6 +824,15 @@ void SetFoundItems(const std::vector<uint32_t>& items)
 
 void Unlight() { nativehighlight::Clear(); }
 
+// The search is over: chests stop glowing and their items no longer light up.
+void EndSearch()
+{
+    g_glows.clear();
+    g_found.clear();
+    g_glowsUntil = 0;
+    Unlight();
+}
+
 void StartGlows(const std::vector<uint32_t>& chests)
 {
     g_glows.clear();
@@ -826,12 +840,13 @@ void StartGlows(const std::vector<uint32_t>& chests)
         auto it = g_index.positions.find(c);
         if (it == g_index.positions.end())
             continue;
-        g_glows.push_back({{it->second[0], it->second[1], it->second[2]}, c, 0});
+        g_glows.push_back({{it->second[0], it->second[1], it->second[2]}, c, 0, false});
         if (g_glows.size() <= 8)
             DevLog("  glow %u at %.1f %.1f %.1f", c, it->second[0], it->second[1], it->second[2]);
     }
+    g_found = g_glows;
     g_glowsStart = GetTickCount64();
-    g_glowsUntil = g_glowsStart + kGlowLifetimeMs;
+    g_glowsUntil = g_glowsStart + g_glowLifetimeMs;
     g_lastGlowDraw = g_glowsStart;
     g_step = "highlight";
     nativehighlight::Clear();
@@ -848,7 +863,7 @@ bool Search(const std::string& text, bool picked = false)
         Log("find '%s': %s", q.c_str(), g_index.why.c_str());
         return false;
     }
-#ifdef FIND_HOT_RUNTIME
+#ifdef FIND_DEV
     if(q=="@dev-all-chests") {
         std::vector<uint32_t> all;for(const auto& entry:g_index.positions)all.push_back(entry.first);
         nativehighlight::SetStressTest(true);
@@ -951,7 +966,7 @@ void Tick()
             }
             return;
         }
-        if (!request[0]) { g_glows.clear(); Unlight(); }
+        if (!request[0]) EndSearch();
         else { g_index = BuildIndex(); Search(request); }
         return;
     }
@@ -1145,15 +1160,16 @@ void DrawGlows()
     if (g_glows.empty())
         return;
     ULONGLONG now = GetTickCount64();
-    if (now >= g_glowsUntil || now - g_lastGlowDraw > 2000) {
-        g_glows.clear();
-        Unlight();
+    // No HUD frame for a while (a loading screen, another world) ends the search; an open chest
+    // window hides the HUD too, but the search goes on behind it.
+    if (now >= g_glowsUntil || (now - g_lastGlowDraw > 2000 && now - g_chestWindowAt > 2000)) {
+        EndSearch();
         return;
     }
     g_lastGlowDraw = now;
     float player[3];
     bool havePlayer = PlayerPosition(player);
-    if (!havePlayer) { g_glows.clear(); Unlight(); return; }
+    if (!havePlayer) { EndSearch(); return; }
     std::vector<nativehighlight::Target> targets;
     targets.reserve(g_glows.size());
     for (size_t i = 0; i < g_glows.size();) {
@@ -1168,17 +1184,18 @@ void DrawGlows()
         }
         if (now >= static_cast<ULONGLONG>(InterlockedCompareExchange64(&g_devHoldUntil,0,0)) && havePlayer && !g.arrived) {
             float dx = g.pos[0] - player[0], dy = g.pos[1] + kChestCentre - player[1], dz = g.pos[2] - player[2];
-            if (std::sqrt(dx * dx + dy * dy + dz * dz) < kArrivedMeters)
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) < g_arrivedMeters)
                 g.arrived = (std::max)(now, g_glowsStart + kMinGlowMs);
         }
         if (now >= static_cast<ULONGLONG>(InterlockedCompareExchange64(&g_devHoldUntil,0,0)) && g.arrived && now >= g.arrived) {
             ULONGLONG since = now - g.arrived;
-            if (since >= kAfterArrivalMs) {
+            if (since >= g_afterArrivalMs) {
                 g_glows.erase(g_glows.begin() + static_cast<std::ptrdiff_t>(i));
                 continue;
             }
-            if (since > kAfterArrivalMs - kFadeOutMs)
-                alpha = static_cast<float>(kAfterArrivalMs - since) / kFadeOutMs;
+            ULONGLONG fade = (std::min)(kFadeOutMs, g_afterArrivalMs);
+            if (since > g_afterArrivalMs - fade)
+                alpha = static_cast<float>(g_afterArrivalMs - since) / fade;
         }
         ULONGLONG left = g_glowsUntil - now;
         if (left < kFadeOutMs)
@@ -1233,8 +1250,7 @@ void SafeDrawGlows()
     __try {
         DrawGlows();
     } __except (FaultFilter(GetExceptionInformation(), "glows")) {
-        g_glows.clear();
-        Unlight();
+        EndSearch();
         Log("glows: fault, cleared");
     }
 }
@@ -1268,26 +1284,34 @@ void CommandLoopHookBody(void* app)
     g_originalLoop(app);
 }
 
-// The chest window: light the found items while it draws; opening it ends the nearest glow.
-void ChestWindowOpened()
+// The chest window: opening a found chest ends its glow. Returns true when its found items
+// should light up: the first time that chest opens in this search.
+bool ChestWindowOpened()
 {
     float player[3];
-    if (g_glows.empty() || !PlayerPosition(player))
-        return;
+    if (g_found.empty() || !PlayerPosition(player))
+        return false;
     Glow* best = nullptr;
     float bestD = kOpenedChestMeters * kOpenedChestMeters;
-    for (Glow& g : g_glows) {
+    for (Glow& g : g_found) {
         float dx = g.pos[0] - player[0], dy = g.pos[1] + kChestCentre - player[1], dz = g.pos[2] - player[2];
         float d = dx * dx + dy * dy + dz * dz;
-        if (d < bestD && !g.arrived) {
+        if (d < bestD) {
             bestD = d;
             best = &g;
         }
     }
-    if (best) {
-        best->arrived = GetTickCount64();
-        Log("chest %u opened: its glow ends", best->chest);
+    if (!best)
+        return false;
+    for (Glow& g : g_glows) {
+        if (g.chest == best->chest && !g.arrived) {
+            g.arrived = GetTickCount64();
+            Log("chest %u opened: its glow ends", g.chest);
+        }
     }
+    bool first = !best->shown;
+    best->shown = true;
+    return first;
 }
 
 #ifdef FIND_DEV
@@ -1325,12 +1349,13 @@ void DualInventoryHookBody(char mode)
     if (active) {
         __try {
             if (now - g_chestWindowAt > kChestWindowGapMs)
-                ChestWindowOpened();
+                g_lightThisWindow = ChestWindowOpened();
         } __except (FaultFilter(GetExceptionInformation(), "chest window")) {
+            g_lightThisWindow = false;
         }
         float pulse = 0.55f + 0.35f * std::sin(static_cast<float>(now % kIconPulseMs) / kIconPulseMs * 6.2831853f);
         ULONGLONG shown = now - g_windowOpenedAt;
-        if (shown >= kIconShowMs)
+        if (!g_lightThisWindow || shown >= kIconShowMs)
             pulse = 0.0f;
         else if (shown > kIconShowMs - kFadeOutMs)
             pulse *= static_cast<float>(kIconShowMs - shown) / kFadeOutMs;
@@ -1409,7 +1434,7 @@ void HotResume() { g_hotPaused = false; }
 bool QueueSearch(const char* text)
 {
     if (!text || strlen(text) >= sizeof(g_request)) return false;
-#ifdef FIND_HOT_RUNTIME
+#ifdef FIND_DEV
     if (!strcmp(text,"@dev-profile-start")) { InterlockedExchange(&g_profileCommand,1); return true; }
     if (!strcmp(text,"@dev-profile-stop")) { InterlockedExchange(&g_profileCommand,2); return true; }
     if (!strcmp(text,"@dev-hold-60s")) { InterlockedExchange64(&g_devHoldUntil,GetTickCount64()+60000); return true; }
@@ -1422,9 +1447,12 @@ bool QueueSearch(const char* text)
     return true;
 }
 
-bool Init(const Hotkey& hotkey)
+bool Init(const Config& config)
 {
-    g_hotkey = hotkey;
+    g_hotkey = config.hotkey;
+    g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
+    g_arrivedMeters = config.glow.nearMeters;
+    g_afterArrivalMs = static_cast<ULONGLONG>(config.glow.nearSeconds * 1000.0f);
     g_nativeReady = nativehighlight::Init();
     uint8_t* playState = FindUnique("4C 8B DC 55 49 8D AB E8 FD FF FF 48 81 EC 10 03 00 00");
     if (!playState) {

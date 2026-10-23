@@ -1,0 +1,10 @@
+{
+    "id": "find",
+    "name": "Find - Base Storage Search",
+    "version": "1.1.0",
+    "dll": "find.dll",
+    "side": "client",
+    "api": 1,
+    "description": "Shift+F in your base: find which chests hold an item; they light up.",
+    "author": "GreeneyeDS"
+}

@@ -2,10 +2,12 @@
 #include <windows.h>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include "config.h"
 #include "log.h"
+#include "../../common/greeneye.h"
 
 namespace {
 
@@ -51,20 +53,63 @@ int KeyCode(const std::string& k)
     return 0;
 }
 
+constexpr char kHeader[] = "; Find - search your base's chests for an item or a chest name.\n";
+constexpr char kHotkeyText[] =
+    "; hotkey: the key that opens the search. A letter, digit or F1-F12, optionally with\n"
+    ";         Shift+, Ctrl+ and/or Alt+ in front. Examples: Shift+F, Ctrl+F, Alt+G, F6\n"
+    "hotkey = Shift+F\n";
+
+// The glow settings: name, default text, range, comment, and where the value goes.
+struct Number {
+    const char* key;
+    const char* text;
+    float lo, hi;
+    const char* comment;
+    float GlowTimes::*field;
+};
+const Number kNumbers[] = {
+    {"glow_seconds", "180", 10, 3600,
+     "; glow_seconds: the found chests glow at most this long (10-3600), or until your next search\n",
+     &GlowTimes::glowSeconds},
+    {"near_meters", "2.5", 0.5f, 20,
+     "; near_meters: coming this close to a found chest counts as reaching it (0.5-20)\n",
+     &GlowTimes::nearMeters},
+    {"near_seconds", "3", 0, 60,
+     "; near_seconds: a chest stops glowing this long after you reach or open it (0-60)\n",
+     &GlowTimes::nearSeconds},
+};
+
+void WriteNumber(FILE* f, const Number& n)
+{
+    fprintf(f, "%s%s = %s\n", n.comment, n.key, n.text);
+}
+
 void WriteDefaults()
 {
-    FILE* f = fopen(kFile, "w");
+    FILE* f = fopen(greeneye::DataPath(kFile), "w");
     if (!f)
         return;
-    fputs("; Find - search your base's chests for an item or a chest name.\n"
-          "; hotkey: the key that opens the search. A letter, digit or F1-F12, optionally with\n"
-          ";         Shift+, Ctrl+ and/or Alt+ in front. Examples: Shift+F, Ctrl+F, Alt+G, F6\n"
-          "hotkey = Shift+F\n",
-          f);
+    fputs(kHeader, f);
+    fputs(kHotkeyText, f);
+    for (const Number& n : kNumbers)
+        WriteNumber(f, n);
     fclose(f);
 }
 
 } // namespace
+
+bool ParseNumber(const char* text, float lo, float hi, float& out)
+{
+    std::string s = Trim(text);
+    if (s.empty())
+        return false;
+    char* end = nullptr;
+    double v = strtod(s.c_str(), &end);
+    if (*end || !(v >= lo && v <= hi))
+        return false;
+    out = static_cast<float>(v);
+    return true;
+}
 
 bool ParseHotkey(const char* text, Hotkey& out)
 {
@@ -92,11 +137,12 @@ Config LoadConfig()
     Config c;
     ParseHotkey(kDefaultHotkey, c.hotkey);
     c.hotkeyText = kDefaultHotkey;
-    FILE* f = fopen(kFile, "r");
+    FILE* f = fopen(greeneye::DataPath(kFile), "r");
     if (!f) {
         WriteDefaults();
         return c;
     }
+    bool seen[sizeof(kNumbers) / sizeof(kNumbers[0])] = {};
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         std::string s = Trim(line);
@@ -117,7 +163,30 @@ Config LoadConfig()
                 Log("find.ini: hotkey '%s' not understood, using %s", value.c_str(), kDefaultHotkey);
             }
         }
+        for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {
+            const Number& n = kNumbers[i];
+            if (key != n.key)
+                continue;
+            seen[i] = true;
+            float v;
+            if (ParseNumber(value.c_str(), n.lo, n.hi, v))
+                c.glow.*n.field = v;
+            else
+                Log("find.ini: %s '%s' not a number from %g to %g, using %s", n.key, value.c_str(), n.lo, n.hi,
+                    n.text);
+        }
     }
     fclose(f);
+    // An older find.ini: add the settings it lacks, with their defaults, so they can be found.
+    FILE* add = nullptr;
+    for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {
+        if (seen[i])
+            continue;
+        if (!add && !(add = fopen(greeneye::DataPath(kFile), "a")))
+            break;
+        WriteNumber(add, kNumbers[i]);
+    }
+    if (add)
+        fclose(add);
     return c;
 }

@@ -22,3 +22,7 @@ src/*.bak
 # measurements and tools that need a private development bridge
 tools/performance/
 tools/*.mjs
+
+# Greeneye Loader dev build
+build-dev/
+bin-dev/

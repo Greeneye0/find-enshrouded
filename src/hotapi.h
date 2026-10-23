@@ -1,27 +1,17 @@
 #pragma once
+// Find's view of the Greeneye Loader's hook API (common/greeneye.h, API 2): under the loader,
+// every hook goes through the loader (host->hook), every detour holds a hot::Lease, and pattern
+// scans read the code as it was before the loader's hooks (host->find, hot::Read). That is what
+// lets the loader replace Find while the game runs (hot reload). Standalone (wsock32.dll) host is
+// null and Find patches the game itself.
 #include <windows.h>
 #include <cstdint>
 #include <cstddef>
-// Versioned C/POD boundary. Both sides use /MT; never transfer CRT-owned objects.
-struct HotHost {
-    uint32_t size, version;
-    void* token;
-    bool (*enter)(void*);
-    void (*leave)();
-    uint8_t* (*find)(const char*, void*);
-    void (*read)(const void*, void*, size_t);
-    void* (*hook)(uint8_t*, void*, size_t, const uint8_t*, size_t);
-    void (*poll)();
-};
-struct HotRuntime {
-    uint32_t size, version;
-    bool (*prepare)();
-    bool (*ready)();
-    void (*resume)();
-    bool (*search)(const char*);
-    bool (*status)(void*);
-};
-using HotInit = bool (*)(const HotHost*, HotRuntime*);
+#include <cstring>
+#include "../../common/greeneye.h"
+
+using HotHost = GreeneyeHost;
+
 namespace hot {
 inline const HotHost* host = nullptr;
 struct Lease {

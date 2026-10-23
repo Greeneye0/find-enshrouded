@@ -39,14 +39,28 @@ Stand in your base and press [b]Shift+F[/b]. A search box opens, drawn with the 
 
 [list=1]
 [*]Close Enshrouded.
-[*]Copy [b]wsock32.dll[/b] into the game folder, next to [i]enshrouded.exe[/i]
-(Steam: right-click Enshrouded > Manage > Browse local files).
+[*]Open the game folder (Steam: right-click Enshrouded > Manage > Browse local files).
+[*]Copy everything from the zip into it, keeping the folders: [b]dbgcore.dll[/b] next to [i]enshrouded.exe[/i], and the [b]greeneye\find[/b] folder.
 [*]Start the game, stand inside one of your bases and press [b]Shift+F[/b].
 [/list]
 
-[b]Hotkey:[/b] change it in [i]find.ini[/i] in the game folder (written on the first start), for example [i]hotkey = Ctrl+F[/i].
+[b]Install by hand:[/b] Vortex does not know the Greeneye Loader yet.
 
-[b]Uninstall:[/b] delete [i]wsock32.dll[/i], plus [i]find.ini[/i] and [i]find.log[/i] if present.
+[b]Updating from 1.0.x:[/b] delete [i]wsock32.dll[/i] from the game folder. Your [i]find.ini[/i] moves to [i]greeneye\find\[/i] by itself.
+
+[b]Uninstall:[/b] delete [i]greeneye\find[/i]; if no other Greeneye mod is left, also [i]dbgcore.dll[/i] and the [i]greeneye[/i] folder.
+
+[line]
+
+[size=4][b]Settings[/b][/size]
+
+[i]greeneye\find\find.ini[/i] is written on the first start. Restart the game after changing it.
+[list]
+[*][b]hotkey[/b] = Shift+F: the key that opens the search, for example [i]Ctrl+F[/i] or [i]F6[/i].
+[*][b]glow_seconds[/b] = 180: the found chests glow at most this long (10-3600), or until your next search.
+[*][b]near_meters[/b] = 2.5: coming this close to a found chest counts as reaching it (0.5-20).
+[*][b]near_seconds[/b] = 3: a chest stops glowing this long after you reach or open it (0-60).
+[/list]
 
 [line]
 
@@ -61,7 +75,7 @@ Find follows the language set in the game. Item, perk, category and rarity names
 [list]
 [*][b]Client-side only.[/b] Servers need nothing installed, and other players do not need the mod.
 [*][b]Only reads your chests.[/b] It never moves, adds or removes an item.
-[*][b]Plays well with other mods.[/b] It uses its own file name, [i]wsock32.dll[/i], and forwards every network call to the real Windows wsock32.dll.
+[*][b]Plays well with other mods.[/b] It runs through the Greeneye Loader ([i]dbgcore.dll[/i], shared with Quick Deposit, Continue and Auto Loot), and where another mod such as Creative Mode hooks the same game function, Find chains onto its hook.
 [*][b]Safe on game updates.[/b] Made for the current game version. After an update the mod checks that it still recognises the game; if it does not, it switches itself off (and says so in [i]find.log[/i]) instead of risking a crash.
 [*]Opens only while you play or have your backpack open, never while you type in chat, rename something or write on a signpost.
 [*]Works with Steam. Not tested with other store versions.
@@ -77,7 +91,30 @@ Find follows the language set in the game. Item, perk, category and rarity names
 
 [line]
 
+[size=4][b]Troubleshooting[/b][/size]
+
+If something doesn't work, please post these two files from the game folder with your report:
+[list]
+[*][i]greeneye\find\find.log[/i]: what Find did.
+[*][i]greeneye\loader.log[/i]: what the Greeneye Loader did.
+[/list]
+
+[line]
+
 [size=4][b]Changelog[/b][/size]
+
+[b]1.1.0[/b]
+[list]
+[*]Runs through the Greeneye Loader ([i]dbgcore.dll[/i]), shared with Quick Deposit, Continue and Auto Loot. [i]find.ini[/i] and [i]find.log[/i] now live in [i]greeneye\find\[/i].
+[*]New settings in [i]find.ini[/i]: [b]glow_seconds[/b] (how long chests glow at most), [b]near_meters[/b] (how close counts as reaching a chest) and [b]near_seconds[/b] (how long a chest keeps glowing after you reach or open it). Raise near_seconds to keep chests lit while you walk between them.
+[*]Found chests glow at most three minutes by default (was five).
+[*]The found items inside a chest glow only the first time you open it.
+[/list]
+Reported bugs fixed and requests:
+[list]
+[*]Items glowed again every time a chest was reopened (reported by Dacrenzio).
+[*]Chests should stay highlighted longer (requested by HadToRegister).
+[/list]
 
 [b]1.0.2[/b]
 [list]

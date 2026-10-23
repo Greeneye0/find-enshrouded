@@ -29,8 +29,23 @@ servers and other players need nothing. Find only reads your chests; it never mo
    - Typed text finds every name with a word starting with it: `stone` finds Stone and
      Rough Stone Block, `arrow` finds every arrow but not Narrow Wall.
 3. The matching chests pulse. Open one and the found items in it pulse gold for about five
-   seconds. A chest's pulse ends a few seconds after you reach it or open it, and every
-   pulse ends when you leave the base.
+   seconds, the first time you open it. A chest's pulse ends a few seconds after you reach it
+   or open it; every pulse ends after three minutes, with your next search, or when you leave
+   the base.
+
+## Settings
+
+`find.ini` (written with the defaults on the first start; settings an older `find.ini` lacks
+are added to it) holds:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `hotkey` | `Shift+F` | the key that opens the search: a letter, digit or F1-F12, with `Shift+`, `Ctrl+` and/or `Alt+` in front if you like |
+| `glow_seconds` | `180` | the found chests glow at most this long (10-3600), or until your next search |
+| `near_meters` | `2.5` | coming this close to a found chest counts as reaching it (0.5-20) |
+| `near_seconds` | `3` | a chest stops glowing this long after you reach or open it (0-60) |
+
+Restart the game after changing them.
 
 ## What you can search for
 
@@ -62,9 +77,9 @@ Needs Windows, the Visual Studio 2022 Build Tools (C++ x64) and nothing else.
 
 ### Development build
 
-`build-hot.bat` builds a development variant: a permanent loader (`bin-hot\wsock32.dll`) and
-the mod itself as `bin-hot\Find.runtime.dll`, which `tools\hot-reload.ps1` can swap into a
-running game without a restart. It also turns on diagnostic logging (`FIND_DEV`). New hook
+`build-dev.bat` builds `bin-dev\loader\find.dll` with diagnostic logging (`FIND_DEV`). Under
+the Greeneye Loader with `greeneye\hotreload.enable`, `..\tools\hot-reload.ps1 find -Dev`
+swaps it into the running game without a restart (see [HOTLOADING.md](HOTLOADING.md)). New hook
 sites still need a restart. Use the release build for playing and for releases.
 
 ## How it works

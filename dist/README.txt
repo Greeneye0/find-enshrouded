@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.0.2
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.0
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -8,9 +8,19 @@ light up. Open one and the items you searched for glow gold inside it.
 INSTALL
 -------
 1. Close Enshrouded.
-2. Copy wsock32.dll into the game folder, next to enshrouded.exe.
-   (Steam: right-click Enshrouded > Manage > Browse local files.)
-3. Start the game, stand inside one of your bases and press Shift+F.
+2. In Steam: right-click Enshrouded > Manage > Browse local files.
+   This opens the game folder (the one with enshrouded.exe), usually
+   C:\Program Files (x86)\Steam\steamapps\common\Enshrouded
+3. Copy everything from this zip into that folder, keeping the folders:
+       dbgcore.dll                 next to enshrouded.exe
+       greeneye\find\find.dll
+       greeneye\find\mod.json
+4. Start the game, stand inside one of your bases and press Shift+F.
+
+Updating from Find 1.0.x: delete wsock32.dll from the game folder. Your find.ini moves to
+greeneye\find\ by itself on the first start.
+
+Install it by hand: Vortex does not know the Greeneye Loader yet.
 
 
 USE
@@ -24,8 +34,10 @@ USE
   Stone Block, "arrow" finds every arrow but not Narrow Wall.
 - A suggestion picked with Tab or the mouse finds just that item, chest or kind.
 - The matching chests pulse with the game's own highlight. A chest stops pulsing a few
-  seconds after you reach it or open it, and every pulse ends when you leave the base.
-- Open a matching chest and the found items in it glow gold for about five seconds.
+  seconds after you reach it or open it. Every pulse ends after three minutes, with your
+  next search, or when you leave the base.
+- Open a matching chest and the found items in it glow gold for about five seconds, the
+  first time you open it.
 
 Find opens only while you play or have your backpack open, never while you type in chat,
 rename something or write on a signpost.
@@ -43,12 +55,18 @@ WHAT YOU CAN SEARCH FOR
 Find searches the chests of the base you stand in. Outside a base it says so.
 
 
-HOTKEY
-------
-find.ini in the game folder (written on the first start) sets the key:
-    hotkey = Shift+F
-A letter, a digit or F1-F12, optionally with Shift+, Ctrl+ and/or Alt+ in front.
-Examples: Ctrl+F, Alt+G, F6. Restart the game after changing it.
+SETTINGS
+--------
+greeneye\find\find.ini (written with the defaults on the first start; settings an older
+find.ini lacks are added to it):
+    hotkey = Shift+F     the key that opens the search. A letter, a digit or F1-F12,
+                         optionally with Shift+, Ctrl+ and/or Alt+ in front.
+                         Examples: Ctrl+F, Alt+G, F6.
+    glow_seconds = 180   the found chests glow at most this long (10-3600), or until
+                         your next search
+    near_meters = 2.5    coming this close to a found chest counts as reaching it (0.5-20)
+    near_seconds = 3     a chest stops glowing this long after you reach or open it (0-60)
+Restart the game after changing them.
 
 
 LANGUAGES
@@ -60,24 +78,40 @@ Portuguese, Polish, Russian, Ukrainian, Japanese, Korean, Chinese and Turkish.
 
 UNINSTALL
 ---------
-Delete wsock32.dll from the game folder, plus find.ini and find.log if present.
+Delete greeneye\find. If no other mod is left in the greeneye folder, delete dbgcore.dll
+and the greeneye folder too.
 
 
 GOOD TO KNOW
 ------------
 - Client-side only. Servers need nothing installed, and other players do not need the mod.
 - Only reads your chests: it never moves, adds or removes items.
-- Works next to other mods: it has its own DLL name and forwards every Winsock call to the
-  real Windows wsock32.dll. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
+- dbgcore.dll is the Greeneye Loader: it loads the mods in the greeneye folder (Find,
+  Continue, Auto Loot and Quick Deposit share it) and forwards everything else to Windows'
+  own dbgcore.dll.
+- Works next to other mods. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
   hooks the same game function, Find chains onto its hook instead of replacing it.
 - Made for the current game version (build 1273043). After a game update the mod checks
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
-- find.log in the game folder says what the mod did.
+- If something goes wrong, greeneye\find\find.log says what the mod did and
+  greeneye\loader.log what the loader did; please post both with a bug report.
 
 
 CHANGES
 -------
+1.1.0
+- Runs through the Greeneye Loader (dbgcore.dll), shared with Quick Deposit, Continue and
+  Auto Loot. find.ini and find.log now live in greeneye\find\.
+- New settings in find.ini: glow_seconds (how long chests glow at most), near_meters (how
+  close counts as reaching a chest) and near_seconds (how long a chest keeps glowing after
+  you reach or open it). Raise near_seconds to keep chests lit while you walk between them.
+- Found chests glow at most three minutes by default (was five).
+- The found items inside a chest glow only the first time you open it.
+Reported bugs fixed and requests:
+- Items glowed again every time a chest was reopened (reported by Dacrenzio).
+- Chests should stay highlighted longer (requested by HadToRegister).
+
 1.0.2
 - Works with Creative Mode. Find 1.0.1 switched itself off next to it ("signature not
   found: LocaText" in find.log); it now finds the game functions Creative Mode hooks and
