@@ -1,2 +1,2 @@
 An NPC's Summoning Staff is found as "Summoning Staff" too: the game names it after the NPC ("Fenrig Mills, Jr."), so only the NPC's name found it. Find lists it as "Summoning Staff (Fenrig Mills, Jr.)".
-Reported bugs fixed: Searching "summon" did not find Summoning Staffs.
+Reported bugs fixed: Searching "summon" did not find Summoning Staffs (reported by HadToRegister).

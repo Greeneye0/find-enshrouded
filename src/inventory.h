@@ -67,6 +67,10 @@ bool IsHotbarPage(const Owner& player, uint32_t pageEntity);
 // the box. Walks the client registry's entity table once. Returns how many were written.
 int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max);
 
+// Storage chests inside the box: every inventory there whose pages are all storage. For a base
+// that lists no crafting-storage chests (a small flame altar). Needs Ready() first.
+int FindPlainChests(const float lo[3], const float hi[3], uint32_t* out, int max);
+
 // World position of an entity in meters. Returns false if unknown.
 bool Position(uint32_t entity, float out[3]);
 

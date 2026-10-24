@@ -1,0 +1,2 @@
+Works in a base whose altar lists no chests (a small flame altar): Find searches the storage chests inside the base instead of saying it has none.
+Reported bugs fixed: "This base has no storage chests to search" with a chest in the base (reported by Andydark287).

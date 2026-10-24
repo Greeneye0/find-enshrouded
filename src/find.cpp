@@ -247,6 +247,10 @@ std::string Trim(std::string s)
 }
 
 // The storage chests of the base you stand in (as Quick Deposit finds them).
+#ifdef FIND_DEV
+bool g_devPlain = false; // @dev-plain: act as if the base listed no chests (a small flame altar)
+#endif
+
 bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 {
     void* client = GameClient();
@@ -284,10 +288,21 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
     for (uint64_t i = 0; ids && i < n && magic.size() < kMaxChests; ++i)
         if (ids[i])
             magic.push_back(ids[i]);
+#ifdef FIND_DEV
+    if (g_devPlain)
+        magic.clear();
+#endif
     out = magic;
     if (magic.empty()) {
-        why = "no storage chests in this base";
-        return false;
+        // A small flame altar lists no crafting-storage chests: find the plain chests themselves.
+        std::vector<uint32_t> plain(kMaxChests);
+        int np = !inv::Ready(playerId, nullptr, 0) ? 0 : inv::FindPlainChests(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), plain.data(), kMaxChests);
+        out.assign(plain.begin(), plain.begin() + np);
+        if (out.empty()) {
+            why = "no storage chests in this base";
+            return false;
+        }
+        return true;
     }
     if (!inv::Ready(playerId, magic.data(), static_cast<int>(magic.size())))
         return true;
@@ -874,12 +889,37 @@ bool Search(const std::string& text, bool picked = false)
     std::string q = Lower(Trim(text));
     if (q.empty())
         return false;
-    if (!g_index.ok) {
+    if (!g_index.ok && q.rfind("@dev-", 0) != 0) {
         g_notice = strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase);
         Log("find '%s': %s", q.c_str(), g_index.why.c_str());
         return false;
     }
 #ifdef FIND_DEV
+    if (q.rfind("@dev-types ", 0) == 0) {
+        // Component type names of entities: "@dev-types 1227 1177"
+        void* reg = inv::InspectRegistry(0);
+        for (const char* p = q.c_str() + 11; *p;) {
+            char* end;
+            unsigned long id = strtoul(p, &end, 10);
+            if (end == p)
+                break;
+            p = end;
+            uint16_t types[640];
+            int n = reg ? inv::Types(reg, static_cast<uint32_t>(id), types, 640) : -1;
+            std::string line;
+            for (int i = 0; i < n; ++i) {
+                char name[96];
+                line += " " + std::to_string(types[i]) + "=" + (ecs::Name(reg, types[i], name, sizeof(name)) ? name : "?");
+            }
+            Log("dev types %lu:%s", id, line.c_str());
+        }
+        return false;
+    }
+    if (q == "@dev-plain") {
+        g_devPlain = !g_devPlain;
+        Log("dev: small-altar mode %s", g_devPlain ? "on" : "off");
+        return false;
+    }
     if(q=="@dev-all-chests") {
         std::vector<uint32_t> all;for(const auto& entry:g_index.positions)all.push_back(entry.first);
         nativehighlight::SetStressTest(true);

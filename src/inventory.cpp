@@ -476,15 +476,15 @@ bool IsHotbarPage(const Owner& player, uint32_t pageEntity)
 }
 
 
-int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max)
+int WalkEntities(void* registry, const uint16_t* need, int needCount, const float lo[3], const float hi[3],
+                 uint32_t* out, int max, int& scanned)
 {
-    if (!g_registry || !g_typeSetup)
-        return 0;
     // Entity table (see 1409a8070): map at registry + 0x148 with capacity at +0x10, occupancy
     // bits at +0x08, entity ids at +0x28; records at registry + 0x188, same slot index.
-    auto* reg = static_cast<uint8_t*>(g_registry);
+    auto* reg = static_cast<uint8_t*>(registry);
     uint8_t* map = reg + 0x148;
-    int n = 0, scanned = 0;
+    int n = 0;
+    scanned = 0;
     __try {
         uint64_t capacity = *reinterpret_cast<uint64_t*>(map + 0x10);
         auto* used = *reinterpret_cast<uint64_t**>(map + 0x08);
@@ -501,9 +501,12 @@ int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max)
                 continue;
             ++scanned;
             auto* bits = *reinterpret_cast<uint64_t**>(rec + 0x18);
-            if (!(bits[g_typeSetup >> 6] >> (g_typeSetup & 63) & 1) || !(bits[kTypePosition >> 6] >> (kTypePosition & 63) & 1))
+            bool all = true;
+            for (int k = 0; k < needCount && all; ++k)
+                all = bits[need[k] >> 6] >> (need[k] & 63) & 1;
+            if (!all)
                 continue;
-            auto* pos = static_cast<int64_t*>(Component(g_registry, kTypePosition, id));
+            auto* pos = static_cast<int64_t*>(Component(registry, kTypePosition, id));
             if (!pos)
                 continue;
             float p[3] = {pos[0] / 4294967296.0f, pos[1] / 4294967296.0f, pos[2] / 4294967296.0f};
@@ -514,9 +517,45 @@ int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         Log("containers: entity table walk failed");
     }
-    static int lastN = -1; // FindContainers runs on every bridge status call; log changes only
+    return n;
+}
+
+int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max)
+{
+    if (!g_registry || !g_typeSetup)
+        return 0;
+    const uint16_t need[] = {g_typeSetup, kTypePosition};
+    int scanned = 0;
+    int n = WalkEntities(g_registry, need, 2, lo, hi, out, max, scanned);
+    static int lastN = -1; // log changes only
     if (n != lastN)
         Log("containers: %d in the base (%d entities checked)", n, scanned);
+    lastN = n;
+    return n;
+}
+
+int FindPlainChests(const float lo[3], const float hi[3], uint32_t* out, int max)
+{
+    // Every inventory owner in the box whose pages are all storage: equipment, customization or
+    // currency pages mean a player, an NPC or a mannequin. (Component type numbers change between
+    // game sessions, so chests are not matched by their component types.)
+    uint32_t found[512];
+    int nf = FindContainers(lo, hi, found, max < 512 ? max : 512);
+    int n = 0;
+    for (int i = 0; i < nf; ++i) {
+        Owner o;
+        if (!ReadOwner(found[i], o))
+            continue;
+        bool storage = true;
+        for (int p = 0; p < o.pageCount && storage; ++p)
+            storage = o.pages[p].kind != PageKind::Equipment && o.pages[p].kind != PageKind::Customization &&
+                      o.pages[p].kind != PageKind::Currency;
+        if (storage)
+            out[n++] = found[i];
+    }
+    static int lastN = -1;
+    if (n != lastN)
+        Log("containers: %d storage chests in a base that lists none (%d inventories)", n, nf);
     lastN = n;
     return n;
 }

@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.4
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.5
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,12 +100,19 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.5
+- Works in a base whose altar lists no chests (a small flame altar): Find searches the
+  storage chests inside the base instead of saying it has none.
+Reported bugs fixed:
+- "This base has no storage chests to search" with a chest in the base (reported by
+  Andydark287).
+
 1.1.4
 - An NPC's Summoning Staff is found as "Summoning Staff" too: the game names it after the
   NPC ("Fenrig Mills, Jr."), so only the NPC's name found it. Find lists it as
   "Summoning Staff (Fenrig Mills, Jr.)".
 Reported bugs fixed:
-- Searching "summon" did not find Summoning Staffs.
+- Searching "summon" did not find Summoning Staffs (reported by HadToRegister).
 
 1.1.3
 - Fixed: in some bases a search missed items past a chest's first row and every chest not
