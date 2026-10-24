@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.3
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.4
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.4
+- An NPC's Summoning Staff is found as "Summoning Staff" too: the game names it after the
+  NPC ("Fenrig Mills, Jr."), so only the NPC's name found it. Find lists it as
+  "Summoning Staff (Fenrig Mills, Jr.)".
+Reported bugs fixed:
+- Searching "summon" did not find Summoning Staffs.
+
 1.1.3
 - Fixed: in some bases a search missed items past a chest's first row and every chest not
   linked to the flame altar ("purple" found nothing although Purple Berries were in a

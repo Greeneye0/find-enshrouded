@@ -309,6 +309,21 @@ std::string ItemName(uint32_t itemId)
     return name;
 }
 
+// An NPC's summoning staff is named after the NPC ("Fenrig Mills, Jr."), but the game shows it as
+// a Summoning Staff: "Summoning Staff (Fenrig Mills, Jr.)" finds it by either.
+constexpr uint32_t kSummoningStaffItem = 1182285312; // NpcSummoner_Intro: "Summoning Staff"
+
+std::string SearchName(uint32_t itemId)
+{
+    std::string name = ItemName(itemId);
+    if (_strnicmp(inv::Describe(itemId).raw, "NPC_", 4) != 0)
+        return name;
+    std::string staff = inv::ItemInfo(kSummoningStaffItem) ? ItemName(kSummoningStaffItem) : std::string();
+    if (staff.empty() || staff.rfind("item ", 0) == 0)
+        staff = "Summoning Staff";
+    return staff + " (" + name + ")";
+}
+
 // Item categories as the search offers them (keen::ItemCategory order); empty: not offered.
 enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType };
 
@@ -493,7 +508,7 @@ Index BuildIndex()
                 size_t e;
                 if (it == byItem.end()) {
                     g_step = "item name";
-                    std::string n = ItemName(s.itemId);
+                    std::string n = SearchName(s.itemId);
                     e = ix.entries.size();
                     byItem[s.itemId] = e;
                     // A blueprint's own name is what it builds ("Single Wall Block 0,5m"), but the
