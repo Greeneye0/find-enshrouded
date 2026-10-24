@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <vector>
 #include "nativehighlight.h"
 #include "nativeimage.h"
 #include "proxy_math.h"
@@ -415,6 +416,29 @@ bool GetStatus(Status* out) {
     return true;
 }
 
+// Only the two render systems' calls to the iterator go through NextHook: the iterator itself and
+// its many other callers stay as they are (XHL's Area Harvest disassembles the iterator and
+// backs out when its first bytes are a hook). They all call the same function, so the first
+// redirect's answer serves them all.
+bool HookNext(uint8_t* next)
+{
+    std::vector<uint8_t*> all(4096);
+    int found = CallsTo(next, all.data(), static_cast<int>(all.size())), n = 0, redirected = 0;
+    for (int i = 0; i < found; ++i) {
+        auto call = reinterpret_cast<uintptr_t>(all[i]);
+        bool mine = false;
+        for (const auto& system : g_systems)
+            mine |= call >= system.begin && call < system.end;
+        if (!mine) continue;
+        ++n;
+        void* previous = RedirectCall(all[i], reinterpret_cast<void*>(&NextHook));
+        if (previous && !g_next) g_next = reinterpret_cast<NextFn>(previous);
+        redirected += previous != nullptr;
+    }
+    Log("native: %d of the render systems' %d iterator calls redirected (%d calls in all)", redirected, n, found);
+    return g_next != nullptr && n > 0 && redirected == n;
+}
+
 bool Init() {
     auto next = FindUnique("40 57 48 83 EC 20 4C 8B 01 48 8B FA 8B 41 08 4C 8B C9 49 3B 80 30 08 00 00");
     auto setter = FindUnique("48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 41 56 48 83 EC 20 33 DB 4D 8B F0 48 8B FA 48 8B F1 48 39 5A 08 76 46 66 66 0F 1F 84 00 00 00 00 00 48 8B 07 41 B0 01 48 8B CE 8B 14 98 E8 ?? ?? ?? ?? 48 85 C0 74 1D 49 8B 0E 0F B6 14 0B 38 50 78");
@@ -450,8 +474,7 @@ bool Init() {
     memcpy(prologue + 16, load, 4);
     g_color = reinterpret_cast<ColorFn>(InstallHook(color, reinterpret_cast<void*>(&ColorHook), 14, prologue, sizeof(prologue)));
     if (!g_color) return false;
-    g_next = reinterpret_cast<NextFn>(InstallHookChained(next, reinterpret_cast<void*>(&NextHook), 12));
-    g_ready = g_next != nullptr;
+    g_ready = HookNext(next);
     Log("native: %s; dynamic %p, static %p",g_ready ? "renderer pulse ready" : "hook failed",reinterpret_cast<void*>(g_systems[0].begin),reinterpret_cast<void*>(g_systems[1].begin));
     return g_ready;
 }

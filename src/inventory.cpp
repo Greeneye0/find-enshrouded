@@ -311,13 +311,19 @@ bool Init()
         Log("ViewInit: unexpected start");
         return false;
     }
-    bool chained = IsHookPatch(viewInit) || IsHookPatch(itemLookup);
+    bool chained = IsHookPatch(itemLookup);
     if (IsHookPatch(itemLookup))
         g_originalItemLookup = static_cast<ItemInfoLookupFn>(InstallHookChained(itemLookup, reinterpret_cast<void*>(&ItemLookupHook)));
     else
         g_originalItemLookup = static_cast<ItemInfoLookupFn>(HookItemLookup(itemLookup));
-    g_originalViewInit = static_cast<ViewInitFn>(InstallHookChained(viewInit, reinterpret_cast<void*>(&ViewInitHook), 12));
-    Log("inventory hooks %s", chained ? "chained with another mod's (Quick Deposit, Creative Mode)" : "installed");
+    // ViewInit itself stays as it is (XHL's Area Harvest disassembles it and backs out when it
+    // starts with a hook): only these client systems' calls to it go through ViewInitHook. Each
+    // works on the local player's or the chests' inventories, so its registry is one Find needs.
+    static const char* const systems[] = {"client_cursor", "setup_actionbar", "local_player_ui_render_setup",
+                                          "render_collection_models", "inventory_setup", "inventory_setup_init"};
+    int calls, found;
+    g_originalViewInit = static_cast<ViewInitFn>(RedirectSystemCalls(viewInit, systems, 6, reinterpret_cast<void*>(&ViewInitHook), calls, found));
+    Log("inventory hooks %s; ViewInit: %d calls redirected from %d of 6 systems", chained ? "chained with another mod's (Quick Deposit, Creative Mode)" : "installed", g_originalViewInit ? calls : 0, found);
     if (!g_originalItemLookup || !g_originalViewInit) {
         Log("inventory hooks failed");
         return false;

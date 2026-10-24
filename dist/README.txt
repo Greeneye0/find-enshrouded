@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.1
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.2
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,15 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.2
+- Works alongside the XHL mods (Vein Mining, Area Harvest, Free Climbing and the others):
+  with Find installed, their F10 settings menu was missing and Area Harvest did not start.
+  Find now hooks only its own calls to the game functions they look up, never the
+  functions themselves.
+Reported bugs fixed:
+- XHL mods (Vein Mining, Auto Harvest) stopped working and their F10 menu was missing with
+  Find installed (reported by HadToRegister).
+
 1.1.1
 - Fixed: in a base where your game had not loaded the base's first chest yet (a large base,
   often on a server), every search found nothing. Find now tries every chest of the base,

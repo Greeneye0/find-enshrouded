@@ -1,0 +1,2 @@
+Works alongside the XHL mods (Vein Mining, Area Harvest, Free Climbing and the others): with Find installed, their F10 settings menu was missing and Area Harvest did not start. Find now hooks only its own calls to the game functions they look up, never the functions themselves.
+Reported bugs fixed: XHL mods (Vein Mining, Auto Harvest) stopped working and their F10 menu was missing with Find installed (reported by HadToRegister).

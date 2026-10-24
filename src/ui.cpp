@@ -26,12 +26,13 @@
 //   The field (140b12120) keeps what is typed in its own edit state, looked up every frame by
 //   140af9040 FieldState(field, 0x64d2790860d9c7f6, 1) (0x1990 bytes); the state takes the
 //   desc's text only when it is created. 1411b0370 SetEditText(&result, state + 0x10, &utf8)
-//   replaces the edited text and puts the cursor at its end; Find calls it from a hook on
-//   FieldState while its own dialog draws.
+//   replaces the edited text and puts the cursor at its end; Find calls it while its own
+//   dialog draws, from the dialog's own "call FieldState"s (redirected), so FieldState's bytes
+//   and its other callers stay as they are for XHL.
 //   Under the buttons Find adds a small hint line: the dialog ends its button row with
 //   140a31b70 EndWidget(&row) (the call followed by "mov rsi, [rsp+0xc00]; cmp [rbp+0x28], r15b");
-//   a hook on EndWidget draws a text label right after that call, so the label is laid out
-//   below the buttons. Labels as the main menu draws its small texts:
+//   that one call is redirected to draw a text label right after it, so the label is laid out
+//   below the buttons. EndWidget itself stays untouched: XHL's mod loader finds it by its bytes. Labels as the main menu draws its small texts:
 //   140b0c760 BeginLabel(label, text, style, 0) (label: +0x08 widget, whose +0x6c is the
 //   alignment; +0x3d 1; +0xb0 colour u32 + alpha float), 140b13f50 EndLabel(label); the small
 //   text style is assets + 0x10a0c.
@@ -205,41 +206,47 @@ uint8_t* FieldStateHookBody(void* field, uint64_t id, uint32_t create)
 void DrawHint(Dialog* d);
 void DrawScroll(Dialog* d, void* widget);
 
-void EndWidgetHookBody(void* widget, void* returnSite);
+void EndWidgetHookBody(void* widget);
+// The dialog's "end the button row" call, redirected (only that call).
 void EndWidgetHook(void* widget)
 {
-    void* site = _ReturnAddress();
     hot::Lease lease;
     if (!lease) return g_originalEnd(widget);
-    EndWidgetHookBody(widget, site);
+    EndWidgetHookBody(widget);
 }
-void EndWidgetHookBody(void* widget, void* returnSite)
+void EndWidgetHookBody(void* widget)
 {
     g_originalEnd(widget);
-    if (g_drawing && returnSite == g_afterButtons) {
+    if (g_drawing) {
         CopyRect(widget, g_rowRect);
         DrawScroll(g_drawing, widget);
         DrawHint(g_drawing);
     }
 }
 
-// FieldState starts "push rbx; sub rsp, 30h; mov rcx, [rcx+8]; lea r9, [rip+x]" (17 bytes).
-// The trampoline runs the first three and loads r9 with the absolute address.
+// The text dialog's own calls to FieldState go through FieldStateHook: neither FieldState nor the
+// game's other calls to it are patched (XHL's mod loader looks up FieldState by its bytes and
+// checks that the text widget's call still leads there). They all call the same function, so
+// the first redirect's answer serves them all.
 bool HookFieldState(uint8_t* start)
 {
-    if (IsAbsJumpPatch(start)) {
-        Log("dialog: the text field is hooked by another mod; Tab only selects");
-        return false;
+    uint8_t* all[64];
+    uint8_t* calls[64];
+    int found = CallsTo(start, all, 64), n = 0;
+    for (int i = 0; i < found; ++i)
+        if (g_dialog && FunctionStart(all[i]) == reinterpret_cast<uint8_t*>(g_dialog))
+            calls[n++] = all[i];
+    int redirected = 0;
+    for (int i = 0; i < n; ++i) {
+        void* previous = RedirectCall(calls[i], reinterpret_cast<void*>(&FieldStateHook));
+        if (previous && !g_originalFieldState)
+            g_originalFieldState = reinterpret_cast<FieldStateFn>(previous);
+        redirected += previous != nullptr;
     }
-    uint8_t* target = start + 17 + ([&]{ int32_t d; hot::Read(start + 13, &d, 4); return d; }());
-    uint8_t prologue[10 + 10];
-    hot::Read(start, prologue, 10);
-    prologue[10] = 0x49; // mov r9, imm64
-    prologue[11] = 0xB9;
-    memcpy(prologue + 12, &target, 8);
-    g_originalFieldState = reinterpret_cast<FieldStateFn>(
-        InstallHook(start, reinterpret_cast<void*>(&FieldStateHook), 17, prologue, sizeof(prologue)));
-    return g_originalFieldState != nullptr;
+    Log("dialog: %d of the dialog's %d text field state calls redirected (%d calls in all)", redirected, n, found);
+    if (redirected && redirected < n)
+        Log("dialog: some text field state calls could not be redirected; Tab may not fill in the field everywhere");
+    return g_originalFieldState != nullptr && redirected == n;
 }
 
 } // namespace
@@ -610,15 +617,14 @@ bool Init()
     g_beginLabel = reinterpret_cast<BeginLabelFn>(FindUnique("48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 41 56 48 83 EC 50 48 8B DA 41 0F B6 F9"));
     g_endLabel = reinterpret_cast<EndLabelFn>(FindUnique("40 55 56 57 48 8D 6C 24 B9 48 81 EC F0 00 00 00 0F 29 BC 24 B0 00 00 00"));
     uint8_t* rowEnd = FindUnique("48 8D 4D A0 E8 ?? ?? ?? ?? 48 8B B4 24 00 0C 00 00 44 38 7D 28");
-    uint8_t* rowEndTarget = rowEnd ? rowEnd + 9 + *reinterpret_cast<int32_t*>(rowEnd + 5) : nullptr;
-    if (g_beginLabel && g_endLabel && g_end && rowEndTarget == reinterpret_cast<uint8_t*>(g_end) &&
-        !IsAbsJumpPatch(reinterpret_cast<uint8_t*>(g_end))) {
+    int32_t rowEndRel = 0; // the call as it was before the loader's redirect (a reload sees it otherwise)
+    if (rowEnd)
+        hot::Read(rowEnd + 5, &rowEndRel, sizeof(rowEndRel));
+    uint8_t* rowEndTarget = rowEnd ? rowEnd + 9 + rowEndRel : nullptr;
+    if (g_beginLabel && g_endLabel && g_end && rowEndTarget == reinterpret_cast<uint8_t*>(g_end)) {
         g_afterButtons = rowEnd + 9;
-        // EndWidget: mov [rsp+18h], rbx; mov [rsp+20h], rsi; push rdi; sub rsp, 60h (15 bytes).
-        g_originalEnd = reinterpret_cast<EndWidgetFn>(InstallHook(reinterpret_cast<uint8_t*>(g_end),
-                                                                  reinterpret_cast<void*>(&EndWidgetHook), 15));
-        if (g_originalEnd)
-            g_end = g_originalEnd; // Find's own widgets skip the hook
+        // Only the dialog's own "call EndWidget" (rowEnd + 4); Find's own widgets call g_end.
+        g_originalEnd = reinterpret_cast<EndWidgetFn>(RedirectCall(rowEnd + 4, reinterpret_cast<void*>(&EndWidgetHook)));
     }
     if (!g_originalEnd) {
         g_beginLabel = nullptr;
