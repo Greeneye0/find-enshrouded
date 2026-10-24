@@ -1,0 +1,2 @@
+Fixed: in some bases a search missed items past a chest's first row and every chest not linked to the flame altar ("purple" found nothing although Purple Berries were in a chest). It happened when the base's first chest had only one row.
+Reported bugs fixed: Search did not find Purple Berries stored in the base.

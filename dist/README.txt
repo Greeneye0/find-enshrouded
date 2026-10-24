@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.2
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.3
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.3
+- Fixed: in some bases a search missed items past a chest's first row and every chest not
+  linked to the flame altar ("purple" found nothing although Purple Berries were in a
+  chest). It happened when the base's first chest had only one row.
+Reported bugs fixed:
+- Search did not find Purple Berries stored in the base.
+
 1.1.2
 - Works alongside the XHL mods (Vein Mining, Area Harvest, Free Climbing and the others):
   with Find installed, their F10 settings menu was missing and Area Harvest did not start.
