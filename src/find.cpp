@@ -914,6 +914,10 @@ bool Search(const std::string& text, bool picked = false)
     if (chests.empty()) {
         g_notice = Format(strings::NoMatch, Trim(text));
         Log("find '%s': nothing in %d chests", q.c_str(), g_index.chestCount);
+#ifdef FIND_DEV
+        for (const Entry& e : g_index.entries)
+            DevLog("  index: %s [%d] %zu chests", e.name.c_str(), static_cast<int>(e.kind), e.chests.size());
+#endif
         return false;
     }
     StartGlows(chests);
