@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.8
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.9
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -52,7 +52,8 @@ WHAT YOU CAN SEARCH FOR
 - Chest names you gave yourself with Rename. The game's own chest titles ("Storage Chest"
   and its variants) are not searched, as every unnamed chest would match.
 
-Find searches the chests of the base you stand in. Outside a base it says so.
+Find searches the chests and crafting stations of the base you stand in. Outside a base it
+says so.
 
 
 SETTINGS
@@ -100,6 +101,11 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.9
+- Crafting stations are searched too: a seedbed's seedlings, a kiln's charcoal, a loom's
+  linen and whatever else a station holds light it up like a chest. Planted bushes still
+  stay out.
+
 1.1.8
 - Found chests light up again when another mod outlines things too (The Worst Map Mod's
   GG chest glow): Find no longer depends on being first in line for the game's highlight.

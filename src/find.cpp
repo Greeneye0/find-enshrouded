@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "config.h"
@@ -251,6 +252,17 @@ std::string Trim(std::string s)
 bool g_devPlain = false; // @dev-plain: act as if the base listed no chests (a small flame altar)
 #endif
 
+// Crafting stations hold what they made (a seedbed's seedlings, a kiln's charcoal): they are
+// searched like chests.
+void AddStations(uint8_t* base, std::vector<uint32_t>& out)
+{
+    std::vector<uint32_t> stations(kMaxChests);
+    int ns = inv::FindStations(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), out.data(),
+                               static_cast<int>(out.size()), stations.data(), kMaxChests);
+    for (int i = 0; i < ns && out.size() < static_cast<size_t>(kMaxChests); ++i)
+        out.push_back(stations[i]);
+}
+
 bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 {
     void* client = GameClient();
@@ -317,6 +329,7 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
             why = "no storage chests in this base";
             return false;
         }
+        AddStations(base, out);
         return true;
     }
     std::vector<uint32_t> found(kMaxChests);
@@ -325,6 +338,7 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
     for (int i = 0; i < nf; ++i)
         if (std::find(out.begin(), out.end(), found[i]) == out.end())
             out.push_back(found[i]);
+    AddStations(base, out);
     return true;
 }
 
@@ -977,6 +991,21 @@ bool Search(const std::string& text, bool picked = false)
         g_devPlain = !g_devPlain;
         Log("dev: small-altar mode %s", g_devPlain ? "on" : "off");
         return false;
+    }
+    if (q.rfind("@dev-glow ", 0) == 0) {
+        // Lights any entities, chests or not: "@dev-glow 1263 1031"
+        std::vector<uint32_t> ids;
+        std::istringstream in(q.substr(10));
+        for (uint32_t id; in >> id;) {
+            float at[3];
+            if (!inv::Position(id, at)) { Log("dev glow %u: no position", id); continue; }
+            g_index.positions[id] = {at[0], at[1], at[2]};
+            ids.push_back(id);
+        }
+        InterlockedExchange64(&g_devHoldUntil, GetTickCount64() + 120000);
+        SetFoundItems({});
+        StartGlows(ids);
+        return true;
     }
     if(q=="@dev-all-chests") {
         std::vector<uint32_t> all;for(const auto& entry:g_index.positions)all.push_back(entry.first);

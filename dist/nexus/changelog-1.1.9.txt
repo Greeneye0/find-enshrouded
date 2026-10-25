@@ -1,0 +1,1 @@
+Crafting stations are searched too: a seedbed's seedlings, a kiln's charcoal, a loom's linen and whatever else a station holds light it up like a chest. Planted bushes still stay out.

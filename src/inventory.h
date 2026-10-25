@@ -78,6 +78,11 @@ bool Position(uint32_t entity, float out[3]);
 // client's custom string store at client + 0xf0). Returns false if it has none.
 bool CustomName(void* client, uint32_t entity, char* out, size_t size);
 
+// Crafting stations inside the box (seedbed, kiln, loom and the like) that are not among the chests:
+// inventories of two or more storage pages. Bushes (one page), NPCs and mannequins stay out. Needs
+// Ready() first. Returns how many were written.
+int FindStations(const float lo[3], const float hi[3], const uint32_t* chests, int chestCount, uint32_t* out, int max);
+
 // Keeps only storage chests among candidates: entities with every component type that all
 // the base's magic (crafting-storage) chests share, except the magic-only ones. Crafting
 // stations and similar inventories drop out. Returns the new count.

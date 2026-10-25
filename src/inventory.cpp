@@ -566,6 +566,34 @@ int FindPlainChests(const float lo[3], const float hi[3], uint32_t* out, int max
     return n;
 }
 
+int FindStations(const float lo[3], const float hi[3], const uint32_t* chests, int chestCount, uint32_t* out, int max)
+{
+    // Crafting stations hold their input and output in two or more storage pages (the first is the
+    // station itself). Planted bushes keep their fruit in a single page of their own; equipment,
+    // customization or currency pages mean an NPC, a mannequin or a player.
+    uint32_t found[512];
+    int nf = FindContainers(lo, hi, found, 512);
+    int n = 0;
+    for (int i = 0; i < nf && n < max; ++i) {
+        if (std::find(chests, chests + chestCount, found[i]) != chests + chestCount)
+            continue;
+        Owner o;
+        if (!ReadOwner(found[i], o) || o.pageCount < 2)
+            continue;
+        bool storage = true;
+        for (int p = 0; p < o.pageCount && storage; ++p)
+            storage = o.pages[p].kind != PageKind::Equipment && o.pages[p].kind != PageKind::Customization &&
+                      o.pages[p].kind != PageKind::Currency;
+        if (storage)
+            out[n++] = found[i];
+    }
+    static int lastN = -1;
+    if (n != lastN)
+        Log("containers: %d crafting stations searched too", n);
+    lastN = n;
+    return n;
+}
+
 int KeepStorageChests(const uint32_t* magic, int magicCount, uint32_t* candidates, int n)
 {
     // Types every magic chest has (bitset over the 640 component types)...
@@ -609,7 +637,7 @@ int KeepStorageChests(const uint32_t* magic, int magicCount, uint32_t* candidate
     }
     static int lastSkipped = -1;
     if (skipped != lastSkipped)
-        Log("containers: %d are not storage chests (stations?), skipped", skipped);
+        Log("containers: %d are not storage chests (stations, plants...)", skipped);
     lastSkipped = skipped;
     return kept;
 }
