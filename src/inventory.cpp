@@ -45,6 +45,9 @@ constexpr uint32_t kFirstNonPlayerId = 0x400; // player entities use ids 1..0x3f
 uint16_t g_typeInventory = 283;
 uint16_t g_typeSetup = 0;  // detected
 uint16_t g_typeHotbar = 0; // detected: player component with the hotbar page ids at +0xa0/+0xa4
+// Detected: the component whose 8 bytes are a custom string id (CustomPlayerString). Like every
+// type number, it differs between worlds, so it is forgotten with the registry.
+uint16_t g_typeCustomName = 0;
 constexpr uint16_t kTypePosition = 133; // int64 x, y, z with 32 fraction bits (build 1269579)
 constexpr size_t kHotbarPageA = 0xa0;
 constexpr size_t kHotbarPageB = 0xa4;
@@ -341,6 +344,7 @@ void Forget()
     g_registry = nullptr;
     g_typeSetup = 0;
     g_typeHotbar = 0;
+    g_typeCustomName = 0;
     for (auto& slot : g_seen)
         slot.store(nullptr);
 }
@@ -367,6 +371,7 @@ bool Ready(uint32_t playerId, const uint32_t* probes, int probeCount)
         g_registry = nullptr;
         g_typeSetup = 0;
         g_typeHotbar = 0;
+        g_typeCustomName = 0;
     }
     // Any chest of the base the client knows tells the registries apart (the first may be too far
     // away to be loaded); without one, your own pages: only the client registry holds their
@@ -691,7 +696,6 @@ const uint8_t* FindCustomString(uint8_t* store, uint64_t id, uint32_t* len)
     return nullptr;
 }
 
-uint16_t g_typeCustomName = 0; // detected: the component whose 8 bytes are a custom string id
 
 bool CustomName(void* client, uint32_t entity, char* out, size_t size)
 {
@@ -737,6 +741,21 @@ int DropPlants(void* client, uint32_t* ids, int n)
     char name[64];
     for (int i = 0; i < n && !g_typeCustomName; ++i)
         CustomName(client, ids[i], name, sizeof(name));
+    // A name type that none of the containers has is stale (detected in another world): look again.
+    if (g_typeCustomName) {
+        bool any = false;
+        for (int i = 0; i < n && !any; ++i) {
+            uint16_t types[kComponentBits];
+            int k = EntityTypes(g_registry, ids[i], types, kComponentBits);
+            any = std::find(types, types + (k > 0 ? k : 0), g_typeCustomName) != types + (k > 0 ? k : 0);
+        }
+        if (!any) {
+            Log("chest names: type %u is on none of the %d containers - looking again", g_typeCustomName, n);
+            g_typeCustomName = 0;
+            for (int i = 0; i < n && !g_typeCustomName; ++i)
+                CustomName(client, ids[i], name, sizeof(name));
+        }
+    }
     int kept = 0, dropped = 0;
     for (int i = 0; i < n; ++i) {
         uint16_t types[kComponentBits];
@@ -752,6 +771,11 @@ int DropPlants(void* client, uint32_t* ids, int n)
             ++dropped;
         else
             ids[kept++] = ids[i];
+    }
+    // Every container a plant means the test is wrong for this base, not that it has no chests.
+    if (n && !kept) {
+        Log("containers: all %d looked like plants - keeping them all", n);
+        return n;
     }
     static int lastDropped = -1;
     if (dropped != lastDropped)

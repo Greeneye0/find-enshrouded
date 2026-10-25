@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.6
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.7
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.7
+- Switching to another world without restarting the game no longer makes Find say
+  "This base has no storage chests to search" in a base full of chests (a 1.1.6 bug).
+Reported bugs fixed:
+- No storage chests found after switching worlds.
+
 1.1.6
 - Planted bushes are no longer treated as chests. The flame altar counts their fruit toward
   crafting, so searching "hazelnut" lit up every Hazelnut bush in the base, and with many

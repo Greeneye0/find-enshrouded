@@ -1,0 +1,2 @@
+Switching to another world without restarting the game no longer makes Find say "This base has no storage chests to search" in a base full of chests (a 1.1.6 bug).
+Reported bugs fixed: no storage chests found after switching worlds.
