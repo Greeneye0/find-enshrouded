@@ -51,17 +51,25 @@ struct Scratch {
     std::vector<RasterRect> rectangles;
 };
 Scratch g_scratch;
-void Submit(const Snapshot& s,const Prepared& prepared) {
+// Every rectangle is one UI quad in the game's per-frame dynamic buffer. Exhausting it crashes
+// the game (a null write after "failed to allocate ... from dynamic buffer"): detailed meshes
+// (twelve 8.5k-triangle hazelnut bushes once lit as chests) fragment into tens of thousands of runs.
+// Each chest coarsens its grid until it fits its share of kFrameRects (at most kChestRects), and
+// the frame stops submitting once kFrameRects is spent.
+constexpr size_t kChestRects=3000,kMinChestRects=800,kFrameRects=16000;
+size_t Count(const Prepared& prepared){size_t n=0;for(int k=1;k<=6;++k)n+=prepared.strips[k].size();return n;}
+void Submit(const Snapshot& s,const Prepared& prepared,size_t* budget) {
     const auto& strips=prepared.strips;
+    if(budget){size_t n=Count(prepared);if(n>*budget)return;*budget-=n;}
     float pulse=.5f-.5f*std::cos(float(GetTickCount64()%1800)/1800.f*6.283185307f);
     for(int k=1;k<=4;++k)ui::DrawSolids(strips[k].data(),strips[k].size(),0xff6ecdff,s.alpha*(.08f+k*.025f+(.08f+k*.025f)*pulse));
     ui::DrawSolids(strips[6].data(),strips[6].size(),0xff6ecdff,s.alpha*(.08f+.10f*pulse));
     ui::DrawSolids(strips[5].data(),strips[5].size(),0xff6ecdff,s.alpha*(.45f+.40f*pulse));
 }
-void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camera,Prepared& prepared){
+void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camera,Prepared& prepared,size_t* budget=nullptr,size_t cap=kChestRects){
     if(mesh.vertices.empty())return;
     bool sameGeometry=prepared.mesh==&mesh && !memcmp(&prepared.transform,&s.transform,sizeof(s.transform));
-    if(sameGeometry && prepared.imageValid && !memcmp(&prepared.camera,&camera,sizeof(camera))) { Submit(s,prepared);return; }
+    if(sameGeometry && prepared.imageValid && !memcmp(&prepared.camera,&camera,sizeof(camera))) { Submit(s,prepared,budget);return; }
     prepared.imageValid=false;
     auto& points=prepared.points;auto& worlds=prepared.worlds;auto& faces=prepared.faces;
     points.clear();points.reserve(mesh.vertices.size());
@@ -98,6 +106,10 @@ void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camer
     if(maxx<camera.viewport[0]-10 || maxy<camera.viewport[1]-10 || minx>camera.viewport[0]+camera.viewport[2]+10 || miny>camera.viewport[1]+camera.viewport[3]+10)return;
     float step=std::max(1.f,std::max(maxx-minx,maxy-miny)/250.f);
     if(maxx-minx<1||maxy-miny<1||step>20)return;
+    const float originx=minx,originy=miny;
+    auto& rectangles=g_scratch.rectangles;
+    for(int attempt=0;;++attempt){
+    minx=originx;miny=originy;
     int w=int(std::ceil((maxx-minx)/step))+7,h=int(std::ceil((maxy-miny)/step))+7;
     minx-=3*step;miny-=3*step;
     auto& mask=g_scratch.mask;mask.assign(w*h,0);
@@ -124,25 +136,29 @@ void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camer
             SurfaceCrease(surface[at],surface[at+1])||SurfaceCrease(surface[at],surface[at+w]))labels[at]=5;
         else labels[at]=1+surface[at].shade;
     }
-    auto& rectangles=g_scratch.rectangles;
     MergeRuns(labels,w,h,rectangles);
+    if(rectangles.size()<=cap)break;
+    // Rectangles grow roughly with the grid's area, so scale the step by the square root.
+    if(attempt>=4)return;
+    step*=std::max(1.25f,std::sqrt(float(rectangles.size())/cap)*1.1f);
+    }
     auto& strips=prepared.strips;for(auto& v:strips)v.clear();
     for(const auto& r:rectangles)strips[r.kind].push_back({minx+r.x*step,miny+r.y*step,r.w*step,r.h*step});
     prepared.camera=camera;prepared.imageValid=true;
-    Submit(s,prepared);
+    Submit(s,prepared,budget);
 
 }
 }
 void Draw(const Snapshot* snapshots,unsigned count){
     ui::ProjectionFrame camera;if(!ui::CaptureProjection(camera))return;
-    count=std::min(count,256u);
+    count=std::min(count,256u);size_t budget=kFrameRects,cap=count?std::clamp(kFrameRects/count,kMinChestRects,kChestRects):kChestRects;
     for(unsigned i=0;i<count;++i){const auto& s=snapshots[i];std::string key(reinterpret_cast<const char*>(s.asset+0x110),16);key.append(reinterpret_cast<const char*>(s.mesh),56);
         auto it=cache.find(key);if(it==cache.end()){
             if(cache.size()>=64)continue;
             Mesh mesh;std::vector<uint8_t> content;bool ok=Content(s.asset+0x110,content)&&Decode(content,s.asset,s.mesh,mesh);
             Log("silhouette: mesh decoded=%u vertices=%zu triangles=%zu",ok?1:0,mesh.vertices.size(),mesh.indices.size()/3);it=cache.emplace(key,std::move(mesh)).first;
         }
-        DrawOne(s,it->second,camera,g_prepared[i]);
+        DrawOne(s,it->second,camera,g_prepared[i],&budget,cap);
     }
 }
 }

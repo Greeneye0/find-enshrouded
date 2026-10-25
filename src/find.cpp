@@ -291,12 +291,27 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 #ifdef FIND_DEV
     if (g_devPlain)
         magic.clear();
+    {
+        std::string ids;
+        for (uint32_t m : magic)
+            ids += " " + std::to_string(m);
+        DevLog("  altar lists:%s", ids.c_str());
+    }
 #endif
     out = magic;
+    if (!magic.empty()) {
+        if (!inv::Ready(playerId, magic.data(), static_cast<int>(magic.size())))
+            return true;
+        // The altar lists planted bushes too. Left in, they glowed as chests, and as "magic
+        // chests" they let crafting stations past KeepStorageChests.
+        magic.resize(inv::DropPlants(client, magic.data(), static_cast<int>(magic.size())));
+        out = magic;
+    }
     if (magic.empty()) {
         // A small flame altar lists no crafting-storage chests: find the plain chests themselves.
         std::vector<uint32_t> plain(kMaxChests);
         int np = !inv::Ready(playerId, nullptr, 0) ? 0 : inv::FindPlainChests(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), plain.data(), kMaxChests);
+        np = inv::DropPlants(client, plain.data(), np);
         out.assign(plain.begin(), plain.begin() + np);
         if (out.empty()) {
             why = "no storage chests in this base";
@@ -304,8 +319,6 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
         }
         return true;
     }
-    if (!inv::Ready(playerId, magic.data(), static_cast<int>(magic.size())))
-        return true;
     std::vector<uint32_t> found(kMaxChests);
     int nf = inv::FindContainers(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), found.data(), kMaxChests);
     nf = inv::KeepStorageChests(magic.data(), static_cast<int>(magic.size()), found.data(), nf);
@@ -915,6 +928,51 @@ bool Search(const std::string& text, bool picked = false)
         }
         return false;
     }
+    if (q.rfind("@dev-owner ", 0) == 0) {
+        // Inventory pages of entities: "@dev-owner 1693 1228"
+        for (const char* p = q.c_str() + 11; *p;) {
+            char* end;
+            unsigned long id = strtoul(p, &end, 10);
+            if (end == p)
+                break;
+            p = end;
+            inv::Owner o;
+            if (!inv::ReadOwner(static_cast<uint32_t>(id), o)) {
+                Log("dev owner %lu: unknown", id);
+                continue;
+            }
+            std::string line;
+            for (int i = 0; i < o.pageCount; ++i) {
+                line += " [page " + std::to_string(o.pages[i].entity) + " kind " + std::to_string(static_cast<int>(o.pages[i].kind)) + ":";
+                for (const auto& s : o.pages[i].slots)
+                    if (s.itemId)
+                        line += " " + ItemName(s.itemId) + "x" + std::to_string(s.count);
+                line += "]";
+            }
+            Log("dev owner %lu: %d pages%s", id, o.pageCount, line.c_str());
+        }
+        return false;
+    }
+    if (q == "@dev-pages") {
+        std::map<int, std::string> byPages;
+        for (const auto& entry : g_index.positions) {
+            inv::Owner o;
+            int pages = inv::ReadOwner(entry.first, o) ? o.pageCount : -1;
+            byPages[pages] += " " + std::to_string(entry.first);
+        }
+        for (const auto& [pages, ids] : byPages)
+            Log("dev pages %d:%s", pages, ids.c_str());
+        void* reg = inv::InspectRegistry(0);
+        for (const auto& entry : g_index.positions) {
+            uint16_t types[640];
+            int n = reg ? inv::Types(reg, entry.first, types, 640) : -1;
+            std::string line;
+            for (int i = 0; i < n; ++i)
+                line += " " + std::to_string(types[i]);
+            Log("dev chest types %u:%s", entry.first, line.c_str());
+        }
+        return false;
+    }
     if (q == "@dev-plain") {
         g_devPlain = !g_devPlain;
         Log("dev: small-altar mode %s", g_devPlain ? "on" : "off");
@@ -978,6 +1036,14 @@ bool Search(const std::string& text, bool picked = false)
     StartGlows(chests);
     SetFoundItems(items);
     DevLog("  matched: %s", matched.c_str());
+#ifdef FIND_DEV
+    {
+        std::string ids;
+        for (uint32_t c : chests)
+            ids += " " + std::to_string(c);
+        DevLog("  glowing:%s", ids.c_str());
+    }
+#endif
     Log("find '%s': %d of %d chests glow, %d items light up in them%s", q.c_str(), static_cast<int>(chests.size()),
         g_index.chestCount, static_cast<int>(items.size()), g_nativeReady ? "" : " (no chest outline: see above)");
     return true;

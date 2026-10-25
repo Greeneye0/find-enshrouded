@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.5
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.6
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,17 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.6
+- Planted bushes are no longer treated as chests. The flame altar counts their fruit toward
+  crafting, so searching "hazelnut" lit up every Hazelnut bush in the base, and with many
+  of them in view the game crashed.
+- Crafting stations (spinning wheel, kiln, tanning station and the like) are no longer
+  listed as chests in a base that has planted bushes.
+- Through-wall chest outlines have a detail limit, so many outlines at once can no longer
+  crash the game.
+Reported bugs fixed:
+- Game crash right after searching "hazelnut" (reported by Lomack).
+
 1.1.5
 - Works in a base whose altar lists no chests (a small flame altar): Find searches the
   storage chests inside the base instead of saying it has none.

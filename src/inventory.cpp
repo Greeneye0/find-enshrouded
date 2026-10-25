@@ -16,6 +16,7 @@
 // in that build: 16 link ids, then 16 InventoryCategory bytes) is detected at runtime as the
 // chest type whose link ids are non-player entities that have an Inventory.
 #include <windows.h>
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -727,6 +728,37 @@ bool CustomName(void* client, uint32_t entity, char* out, size_t size)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
     return false;
+}
+
+int DropPlants(void* client, uint32_t* ids, int n)
+{
+    if (!g_registry)
+        return n;
+    char name[64];
+    for (int i = 0; i < n && !g_typeCustomName; ++i)
+        CustomName(client, ids[i], name, sizeof(name));
+    int kept = 0, dropped = 0;
+    for (int i = 0; i < n; ++i) {
+        uint16_t types[kComponentBits];
+        int k = EntityTypes(g_registry, ids[i], types, kComponentBits);
+        bool plant;
+        if (g_typeCustomName) {
+            plant = k > 0 && std::find(types, types + k, g_typeCustomName) == types + k;
+        } else {
+            Owner o;
+            plant = ReadOwner(ids[i], o) && o.pageCount == 1;
+        }
+        if (plant)
+            ++dropped;
+        else
+            ids[kept++] = ids[i];
+    }
+    static int lastDropped = -1;
+    if (dropped != lastDropped)
+        Log("containers: %d are plants (%s), skipped", dropped,
+            g_typeCustomName ? "they can't be named" : "a single page; no chest named yet");
+    lastDropped = dropped;
+    return kept;
 }
 
 const uint8_t* ItemInfo(uint32_t itemId)

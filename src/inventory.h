@@ -82,6 +82,13 @@ bool CustomName(void* client, uint32_t entity, char* out, size_t size);
 // the base's magic (crafting-storage) chests share, except the magic-only ones. Crafting
 // stations and similar inventories drop out. Returns the new count.
 int KeepStorageChests(const uint32_t* magic, int magicCount, uint32_t* candidates, int n);
+// Drops plants from a list of containers. The flame altar's crafting stock lists planted bushes
+// too, since their produce counts toward crafting (a hazelnut bush holds its nuts in one page
+// of its own). Chests can be renamed, so they have CustomPlayerString and plants don't; once a
+// named chest has shown which type that is, it decides. Until then a single page marks a plant.
+// (Component type numbers change between game sessions.) Needs Ready() first. Returns the new
+// count.
+int DropPlants(void* client, uint32_t* ids, int n);
 
 ItemDesc Describe(uint32_t itemId);
 
