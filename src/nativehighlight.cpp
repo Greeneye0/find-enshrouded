@@ -146,8 +146,10 @@ void Restore(unsigned i) {
     Applied a = g_applied[i];
     RemoveProxy(a);
     auto current = g_instance(a.renderer, a.handle, true);
+    // A group another mod set (Quick Deposit's 6, the map mod's 7) is not put back: that mod
+    // restores its own, and once both had lit the chest it stayed lit with neither.
     if (current == a.instance && current && current[0x78] == a.last)
-        Set(a.renderer, a.handle, a.before);
+        Set(a.renderer, a.handle, a.before == 6 || a.before == 7 ? 0 : a.before);
     g_applied[i] = g_applied[--g_appliedCount];
 }
 

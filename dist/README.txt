@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.9
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.10
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -101,6 +101,10 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.10
+- A chest that Find and Quick Deposit (or The Worst Map Mod) lit at the same time no
+  longer stays outlined, in a mixed colour, after both glows end.
+
 1.1.9
 - Crafting stations are searched too: a seedbed's seedlings, a kiln's charcoal, a loom's
   linen and whatever else a station holds light it up like a chest. Planted bushes still

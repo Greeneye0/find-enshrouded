@@ -1,0 +1,1 @@
+A chest that Find and Quick Deposit (or The Worst Map Mod) lit at the same time no longer stays outlined, in a mixed colour, after both glows end.
