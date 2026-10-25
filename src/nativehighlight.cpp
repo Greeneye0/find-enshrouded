@@ -304,35 +304,42 @@ void Apply(void* iter, void* view, const System& system) {
     }
 }
 
-bool NextHookBody(void* iter, void* view, uint32_t size, void* returnSite);
+// Which render system is iterating is told by the iterator's read / write counts (6/2 and 2/1), not
+// by the return address: other mods (Quick Deposit, the map mod) redirect the same calls, and when
+// one of them sits in front of Find, Find's return address is that mod's detour.
+const System* Iterating(void* iter)
+{
+    __try {
+        auto state = Read<uint8_t*>(iter);
+        if (!state) return nullptr;
+        for (const auto& system : g_systems)
+            if (Read<uint16_t>(state, 0x4b8) == system.reads && Read<uint16_t>(state, 0x4ba) == system.writes)
+                return &system;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return nullptr;
+}
+bool NextHookBody(void* iter, void* view, uint32_t size, const System* system);
 bool NextHook(void* iter, void* view, uint32_t size)
 {
-    void* site = _ReturnAddress();
+    const System* system = Iterating(iter);
     bool result;
     { hot::Lease lease; if (!lease) return g_next(iter, view, size);
-      result = NextHookBody(iter, view, size, site); }
-    auto caller = reinterpret_cast<uintptr_t>(site);
-    if (hot::host) for (const auto& system : g_systems)
-        if (caller >= system.begin && caller < system.end) { hot::host->poll(); break; }
+      result = NextHookBody(iter, view, size, system); }
+    if (hot::host && system) hot::host->poll();
     return result;
 }
-bool NextHookBody(void* iter, void* view, uint32_t size, void* returnSite)
+bool NextHookBody(void* iter, void* view, uint32_t size, const System* system)
 {
     bool next = g_next(iter, view, size);
-    if (next || g_inHook) return next;
-    auto caller = reinterpret_cast<uintptr_t>(returnSite);
-    for (const auto& system : g_systems) {
-        if (caller < system.begin || caller >= system.end) continue;
-        g_inHook = true;
-        __try { Apply(iter, view, system); }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            InterlockedExchange(&g_pulsing, 0);
-            static volatile LONG logged;
-            if (!InterlockedExchange(&logged, 1)) Log("native: model layout guard failed; skipped render update");
-        }
-        g_inHook = false;
-        break;
+    if (next || g_inHook || !system) return next;
+    g_inHook = true;
+    __try { Apply(iter, view, *system); }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        InterlockedExchange(&g_pulsing, 0);
+        static volatile LONG logged;
+        if (!InterlockedExchange(&logged, 1)) Log("native: model layout guard failed; skipped render update");
     }
+    g_inHook = false;
     return next;
 }
 

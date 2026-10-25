@@ -1,0 +1,1 @@
+Found chests light up again when another mod outlines things too (The Worst Map Mod's GG chest glow): Find no longer depends on being first in line for the game's highlight.

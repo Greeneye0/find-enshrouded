@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.7
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.8
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -100,6 +100,10 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.1.8
+- Found chests light up again when another mod outlines things too (The Worst Map Mod's
+  GG chest glow): Find no longer depends on being first in line for the game's highlight.
+
 1.1.7
 - Switching to another world without restarting the game no longer makes Find say
   "This base has no storage chests to search" in a base full of chests (a 1.1.6 bug).
