@@ -1,7 +1,7 @@
 {
     "id": "find",
     "name": "Find - Base Storage Search",
-    "version": "1.1.10",
+    "version": "1.2.0",
     "dll": "find.dll",
     "side": "client",
     "api": 1,

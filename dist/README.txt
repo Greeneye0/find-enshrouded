@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.1.10
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.0
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -32,6 +32,9 @@ USE
   finds; Esc cancels.
 - Typed text finds every name with a word starting with it: "stone" finds Stone and Rough
   Stone Block, "arrow" finds every arrow but not Narrow Wall.
+- The NPCs and crafting stations of your base that can make what you searched for light up
+  too: "bandage" lights your Hunter. Items no chest holds but your base can make are
+  suggested as "can be made here".
 - A suggestion picked with Tab or the mouse finds just that item, chest or kind.
 - The matching chests pulse with the game's own highlight. A chest stops pulsing a few
   seconds after you reach it or open it. Every pulse ends after three minutes, with your
@@ -101,6 +104,11 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.0
+- Crafters are found too: searching an item also lights the NPCs and crafting stations of
+  your base that can make it (search "bandage" and your Hunter glows). Items no chest holds
+  but your base can make are suggested as "can be made here".
+
 1.1.10
 - A chest that Find and Quick Deposit (or The Worst Map Mod) lit at the same time no
   longer stays outlined, in a mixed colour, after both glows end.

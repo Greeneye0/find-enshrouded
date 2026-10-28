@@ -120,4 +120,17 @@ int EntitiesNear(void* registry, const float center[3], float radius, uint32_t* 
 
 const char* CategoryName(uint8_t category);
 
+// NPCs and crafting stations in the box and the workshop each crafts at (isWorkshop: a workshop
+// the recipes know).
+struct Crafter {
+    uint32_t entity;
+    uint32_t workshop;
+};
+int FindCrafters(const float lo[3], const float hi[3], bool (*isWorkshop)(uint32_t), Crafter* out, int max);
+
+#ifdef FIND_DEV
+struct Hit { uint32_t entity; uint16_t type; uint16_t offset; };
+int ScanValue(void* registry, uint32_t value, Hit* out, int max);
+#endif
+
 } // namespace inv

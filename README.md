@@ -53,6 +53,9 @@ Restart the game after changing them.
 - **Kinds of items**: categories (Consumables, Ammunition, Materials, ...), rarities
   (Uncommon to Legendary), item types (One-Handed Axe, ...) and perks (Backstab Damage,
   Multishot, ...).
+- **Who can make it**: the NPCs and crafting stations of the base that can make a found item
+  light up too (`bandage` lights the Hunter). Items no chest holds but the base can make are
+  suggested as `can be made here`.
 - **Chest names you gave yourself** with Rename. The game's own chest titles,
   "Storage Chest" and its variants (Large Storage Chest and the like), are not searched:
   every unnamed chest would match.
@@ -88,7 +91,8 @@ Find is a proxy DLL loaded by the game. It finds the game functions it needs by 
 signatures (so it switches itself off rather than crash after a game update), and hooks the
 in-game UI to draw its search box with the game's own text-input dialog, its chest highlight
 through the game's renderer, and the gold boxes in an opened chest through the game's
-inventory slot drawing. Base, chest and item data are read from the client's own state; names
+inventory slot drawing. Base, chest and item data are read from the client's own state, the
+recipes (which NPC or station makes an item) from the game's loaded recipe registry; names
 come from the game's localisation, so the mod follows the game's language.
 
 ## License

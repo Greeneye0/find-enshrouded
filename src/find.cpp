@@ -35,6 +35,7 @@
 #include <vector>
 #include "config.h"
 #include "ecsnames.h"
+#include "recipes.h"
 #include "find.h"
 #include "inventory.h"
 #include "log.h"
@@ -152,6 +153,7 @@ struct Entry {
     uint32_t itemId;
     uint32_t total;   // items in the base
     std::vector<uint32_t> chests;
+    std::vector<uint32_t> crafters; // Item: NPCs and stations of the base that make it
     uint32_t kinds = 0; // Group: how many different items
     std::vector<uint32_t> items; // Group: those items
     uint8_t group = 0;           // Group: what kind (GroupCategory...)
@@ -263,6 +265,8 @@ void AddStations(uint8_t* base, std::vector<uint32_t>& out)
         out.push_back(stations[i]);
 }
 
+float g_baseLo[3], g_baseHi[3]; // the bounds of the base BaseChests found
+
 bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 {
     void* client = GameClient();
@@ -294,6 +298,8 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
         why = "not inside a base";
         return false;
     }
+    memcpy(g_baseLo, &At<float>(base, kBaseMin), sizeof(g_baseLo));
+    memcpy(g_baseHi, &At<float>(base, kBaseMax), sizeof(g_baseHi));
     auto* ids = At<uint32_t*>(base, 0x00);
     uint64_t n = At<uint64_t>(base, 0x08);
     std::vector<uint32_t> magic;
@@ -504,6 +510,44 @@ std::vector<std::pair<std::string, uint8_t>> ItemGroups(uint32_t itemId, const s
     return groups;
 }
 
+// The NPCs and crafting stations of the base light up for the items their recipes make, also
+// items no chest holds ("can be made here").
+void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
+{
+    if (!recipes::Loaded()) {
+        // The recipes are in the same game data as the item records.
+        const uint8_t* info = byItem.empty() ? nullptr : inv::ItemInfo(byItem.begin()->first);
+        if (!recipes::Load(info))
+            return;
+    }
+    std::vector<inv::Crafter> crafters(256);
+    int n = inv::FindCrafters(g_baseLo, g_baseHi, recipes::IsWorkshop, crafters.data(), static_cast<int>(crafters.size()));
+    for (int c = 0; c < n; ++c) {
+        float p[3];
+        if (!inv::Position(crafters[c].entity, p))
+            continue;
+        ix.positions[crafters[c].entity] = {p[0], p[1], p[2]};
+        const std::vector<uint32_t>* makes = recipes::Makes(crafters[c].workshop);
+        for (size_t i = 0; makes && i < makes->size(); ++i) {
+            uint32_t item = (*makes)[i];
+            auto it = byItem.find(item);
+            if (it == byItem.end()) {
+                if (!inv::ItemInfo(item))
+                    continue;
+                std::string name = SearchName(item);
+                uint8_t category = 0;
+                const uint8_t* info = inv::ItemInfo(item);
+                bool blueprint = info && ReadByte(info + kItemCategory, category) && category == kCategoryBlueprints;
+                it = byItem.emplace(item, ix.entries.size()).first;
+                ix.entries.push_back({name, blueprint ? std::string() : Lower(name), Kind::Item, item, 0, {}});
+            }
+            auto& list = ix.entries[it->second].crafters;
+            if (std::find(list.begin(), list.end(), crafters[c].entity) == list.end())
+                list.push_back(crafters[c].entity);
+        }
+    }
+}
+
 // Every item and named chest of the base, built when the search opens.
 Index BuildIndex()
 {
@@ -589,6 +633,8 @@ Index BuildIndex()
             }
         }
     }
+    g_step = "crafters";
+    AddCrafters(ix, byItem);
     return ix;
 }
 
@@ -672,6 +718,8 @@ std::string Describe(const Entry& e)
                                                        : strings::KindCategory;
         return std::string(strings::Get(label)) + ": " + name + kDash + strings::KindCount(e.kinds, n);
     }
+    if (!n && !e.crafters.empty())
+        return name + kDash + strings::Get(strings::MadeHere);
     return name + kDash + strings::ItemCount(e.total, n);
 }
 
@@ -987,6 +1035,69 @@ bool Search(const std::string& text, bool picked = false)
         }
         return false;
     }
+    if (q.rfind("@dev-near ", 0) == 0) {
+        // Entities near the player with their component type names: "@dev-near 30"
+        float at[3], dist[256];
+        uint32_t ids[256];
+        void* reg = inv::InspectRegistry(0);
+        int n = PlayerPosition(at) ? inv::EntitiesNear(reg, at, static_cast<float>(atof(q.c_str() + 10)), ids, dist, 256) : 0;
+        for (int i = 0; i < n; ++i) {
+            uint16_t types[640];
+            int t = inv::Types(reg, ids[i], types, 640);
+            std::string line;
+            for (int k = 0; k < t; ++k) {
+                char name[96];
+                line += " " + std::to_string(types[k]) + "=" + (ecs::Name(reg, types[k], name, sizeof(name)) ? name : "?");
+            }
+            Log("dev near %u %.1fm:%s", ids[i], dist[i], line.c_str());
+        }
+        return false;
+    }
+    if (q.rfind("@dev-data ", 0) == 0) {
+        // Component bytes: "@dev-data 1263 412 64"
+        unsigned id = 0, type = 0, size = 64;
+        sscanf_s(q.c_str() + 10, "%u %u %u", &id, &type, &size);
+        auto* data = static_cast<uint8_t*>(inv::Data(inv::InspectRegistry(0), static_cast<uint16_t>(type), id));
+        for (unsigned off = 0; data && off < size && off < 0x400; off += 16) {
+            uint8_t raw[16];
+            hot::Read(data + off, raw, 16);
+            char hex[64] = {};
+            for (int b = 0; b < 16; ++b) sprintf_s(hex + b * 3, 4, "%02x ", raw[b]);
+            Log("dev data %u/%u +%03x: %s", id, type, off, hex);
+        }
+        return false;
+    }
+    if (q.rfind("@dev-item ", 0) == 0) {
+        // Where an item's ItemInfo lives: "@dev-item 3244772462"
+        uint32_t id = static_cast<uint32_t>(strtoul(q.c_str() + 10, nullptr, 10));
+        const uint8_t* info = inv::ItemInfo(id);
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (info)
+            VirtualQuery(info, &mbi, sizeof(mbi));
+        Log("dev item %u: info %p allocation %p", id, info, mbi.AllocationBase);
+        return false;
+    }
+    if (q.rfind("@dev-u32 ", 0) == 0) {
+        // Entities whose component data holds a value, in every registry: "@dev-u32 841ad755"
+        std::istringstream in(q.substr(9));
+        void* regs[16];
+        int rn = inv::Registries(regs, 16);
+        for (std::string hex; in >> hex;) {
+            uint32_t value = static_cast<uint32_t>(strtoul(hex.c_str(), nullptr, 16));
+            for (int r = 0; r < rn; ++r) {
+                inv::Hit hits[64];
+                int n = inv::ScanValue(regs[r], value, hits, 64);
+                for (int i = 0; i < n; ++i) {
+                    char name[96];
+                    Log("dev u32 %08x reg %d: entity %u type %u=%s +0x%x", value, r, hits[i].entity, hits[i].type,
+                        ecs::Name(regs[r], hits[i].type, name, sizeof(name)) ? name : "?", hits[i].offset);
+                }
+                if (n)
+                    Log("dev u32 %08x reg %d: %d hits", value, r, n);
+            }
+        }
+        return false;
+    }
     if (q == "@dev-plain") {
         g_devPlain = !g_devPlain;
         Log("dev: small-altar mode %s", g_devPlain ? "on" : "off");
@@ -1018,6 +1129,7 @@ bool Search(const std::string& text, bool picked = false)
 #endif
     nativehighlight::SetStressTest(false);
     std::vector<uint32_t> chests;
+    std::vector<uint32_t> crafters; // NPCs and stations that make what matched
     std::vector<uint32_t> items;
     std::string matched; // for the log
     auto add = [&](const Entry& e) {
@@ -1026,6 +1138,9 @@ bool Search(const std::string& text, bool picked = false)
         for (uint32_t c : e.chests)
             if (std::find(chests.begin(), chests.end(), c) == chests.end())
                 chests.push_back(c);
+        for (uint32_t c : e.crafters)
+            if (std::find(crafters.begin(), crafters.end(), c) == crafters.end())
+                crafters.push_back(c);
         if (e.kind == Kind::Item)
             items.push_back(e.itemId);
         for (uint32_t id : e.items)
@@ -1048,12 +1163,12 @@ bool Search(const std::string& text, bool picked = false)
             if (r >= 0 && r <= 2)
                 add(e);
         }
-        if (chests.empty())
+        if (chests.empty() && crafters.empty())
             for (const Entry& e : g_index.entries)
                 if (e.lower.find(q) != std::string::npos)
                     add(e);
     }
-    if (chests.empty()) {
+    if (chests.empty() && crafters.empty()) {
         g_notice = Format(strings::NoMatch, Trim(text));
         Log("find '%s': nothing in %d chests", q.c_str(), g_index.chestCount);
 #ifdef FIND_DEV
@@ -1062,6 +1177,10 @@ bool Search(const std::string& text, bool picked = false)
 #endif
         return false;
     }
+    int chestsLit = static_cast<int>(chests.size());
+    for (uint32_t c : crafters)
+        if (std::find(chests.begin(), chests.end(), c) == chests.end())
+            chests.push_back(c);
     StartGlows(chests);
     SetFoundItems(items);
     DevLog("  matched: %s", matched.c_str());
@@ -1073,8 +1192,9 @@ bool Search(const std::string& text, bool picked = false)
         DevLog("  glowing:%s", ids.c_str());
     }
 #endif
-    Log("find '%s': %d of %d chests glow, %d items light up in them%s", q.c_str(), static_cast<int>(chests.size()),
-        g_index.chestCount, static_cast<int>(items.size()), g_nativeReady ? "" : " (no chest outline: see above)");
+    Log("find '%s': %d of %d chests glow, %d items light up in them, %d NPCs and stations make them%s", q.c_str(),
+        chestsLit, g_index.chestCount, static_cast<int>(items.size()), static_cast<int>(crafters.size()),
+        g_nativeReady ? "" : " (no chest outline: see above)");
     return true;
 }
 

@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <utility>
+#include <vector>
 #include "inventory.h"
 #include "log.h"
 #include "scan.h"
@@ -48,6 +49,10 @@ uint16_t g_typeHotbar = 0; // detected: player component with the hotbar page id
 // Detected: the component whose 8 bytes are a custom string id (CustomPlayerString). Like every
 // type number, it differs between worlds, so it is forgotten with the registry.
 uint16_t g_typeCustomName = 0;
+// Detected: the component of an NPC or crafting station that names its workshop (16 bytes, the
+// workshop id at + 0xc), like the type numbers forgotten with the registry.
+uint16_t g_typeWorkshop = 0;
+constexpr size_t kWorkshopId = 0xc;
 constexpr uint16_t kTypePosition = 133; // int64 x, y, z with 32 fraction bits (build 1269579)
 constexpr size_t kHotbarPageA = 0xa0;
 constexpr size_t kHotbarPageB = 0xa4;
@@ -345,6 +350,7 @@ void Forget()
     g_typeSetup = 0;
     g_typeHotbar = 0;
     g_typeCustomName = 0;
+    g_typeWorkshop = 0;
     for (auto& slot : g_seen)
         slot.store(nullptr);
 }
@@ -592,6 +598,59 @@ int FindStations(const float lo[3], const float hi[3], const uint32_t* chests, i
         Log("containers: %d crafting stations searched too", n);
     lastN = n;
     return n;
+}
+
+int FindCrafters(const float lo[3], const float hi[3], bool (*isWorkshop)(uint32_t), Crafter* out, int max)
+{
+    if (!g_registry || !isWorkshop || max <= 0)
+        return 0;
+    const uint16_t need[] = {kTypePosition};
+    std::vector<uint32_t> ids(8192);
+    int scanned = 0;
+    int n = WalkEntities(g_registry, need, 1, lo, hi, ids.data(), static_cast<int>(ids.size()), scanned);
+    auto workshopOf = [](uint8_t* data) -> uint32_t {
+        uint32_t v[4] = {};
+        __try {
+            memcpy(v, data, sizeof(v));
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return 0;
+        }
+        return v[2] == 0 ? v[3] : 0;
+    };
+    if (!g_typeWorkshop) {
+        // The type whose data names a known workshop on the most entities of the base.
+        uint16_t votes[kComponentBits] = {};
+        for (int i = 0; i < n; ++i) {
+            uint16_t types[kComponentBits];
+            int t = EntityTypes(g_registry, ids[i], types, kComponentBits);
+            for (int k = 0; k < t; ++k)
+                if (auto* data = static_cast<uint8_t*>(Component(g_registry, types[k], ids[i])))
+                    if (uint32_t w = workshopOf(data); w && isWorkshop(w))
+                        ++votes[types[k]];
+        }
+        int best = 0;
+        for (int t = 0; t < kComponentBits; ++t)
+            if (votes[t] > votes[best])
+                best = t;
+        if (!votes[best]) {
+            Log("crafters: no NPC or station of this base names a workshop (%d entities)", n);
+            return 0;
+        }
+        g_typeWorkshop = static_cast<uint16_t>(best);
+        Log("crafters: workshop type %u (%u entities name one)", g_typeWorkshop, votes[best]);
+    }
+    int found = 0;
+    for (int i = 0; i < n && found < max; ++i) {
+        auto* data = static_cast<uint8_t*>(Component(g_registry, g_typeWorkshop, ids[i]));
+        uint32_t w = data ? workshopOf(data) : 0;
+        if (w && isWorkshop(w))
+            out[found++] = {ids[i], w};
+    }
+    static int lastFound = -1;
+    if (found != lastFound)
+        Log("crafters: %d NPCs and stations in the base make things", found);
+    lastFound = found;
+    return found;
 }
 
 int KeepStorageChests(const uint32_t* magic, int magicCount, uint32_t* candidates, int n)
@@ -956,5 +1015,57 @@ int EntitiesNear(void* registry, const float center[3], float radius, uint32_t* 
     }
     return n;
 }
+
+#ifdef FIND_DEV
+// Every (entity, component type, offset) whose data holds value in its first 0x200 bytes.
+int ScanValue(void* registry, uint32_t value, Hit* out, int max)
+{
+    if (!registry || max <= 0)
+        return 0;
+    auto* reg = static_cast<uint8_t*>(registry);
+    uint8_t* map = reg + 0x148;
+    int n = 0;
+    uint64_t capacity = 0;
+    uint64_t* used = nullptr;
+    uint32_t* ids = nullptr;
+    __try {
+        capacity = *reinterpret_cast<uint64_t*>(map + 0x10);
+        used = *reinterpret_cast<uint64_t**>(map + 0x08);
+        ids = *reinterpret_cast<uint32_t**>(map + 0x28);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (capacity > (1u << 22))
+        return 0;
+    for (uint64_t i = 0; i < capacity && n < max; ++i) {
+        uint32_t id = 0;
+        __try {
+            if (!(used[i >> 6] >> (i & 63) & 1))
+                continue;
+            id = ids[i];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            continue;
+        }
+        uint16_t types[640];
+        int t = EntityTypes(registry, id, types, 640);
+        for (int k = 0; k < t && n < max; ++k) {
+            auto* data = static_cast<uint8_t*>(Component(registry, types[k], id));
+            if (!data)
+                continue;
+            for (int off = 0; off < 0x200 && n < max; off += 4) {
+                uint32_t v = 0;
+                __try {
+                    v = *reinterpret_cast<uint32_t*>(data + off);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    break;
+                }
+                if (v == value)
+                    out[n++] = {id, types[k], static_cast<uint16_t>(off)};
+            }
+        }
+    }
+    return n;
+}
+#endif
 
 } // namespace inv
