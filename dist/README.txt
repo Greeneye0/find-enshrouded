@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.0
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.1
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -104,6 +104,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.1
+- The Construction Hammer is found by its name: as a Blueprint it was left out. Your
+  hammers and their saved blueprints are one "Construction Hammer" entry; Decay and
+  Overgrowth Tools and their shapes are grouped the same way.
+- Summoning Staffs are one "Summoning Staff" entry instead of one per NPC.
+
 1.2.0
 - Crafters are found too: searching an item also lights the NPCs and crafting stations of
   your base that can make it (search "bandage" and your Hunter glows). Items no chest holds

@@ -1,0 +1,2 @@
+The Construction Hammer is found by its name: as a Blueprint it was left out. Your hammers and their saved blueprints are one "Construction Hammer" entry; Decay and Overgrowth Tools and their shapes are grouped the same way.
+Summoning Staffs are one "Summoning Staff" entry instead of one per NPC.

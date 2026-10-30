@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -361,9 +362,60 @@ std::string ItemName(uint32_t itemId)
 // a Summoning Staff: "Summoning Staff (Fenrig Mills, Jr.)" finds it by either.
 constexpr uint32_t kSummoningStaffItem = 1182285312; // NpcSummoner_Intro: "Summoning Staff"
 
+// A blueprint's own name is what it builds ("Single Wall Block 0,5m"), but the game shows it as
+// the tool that holds it, usually the Construction Hammer: it is listed as "Construction Hammer
+// (Single Wall Block 0,5m)" and found by the tool's name only, so "wall" doesn't light every chest
+// of blueprints. The tools themselves (Tool_*: hammers, Decay and Overgrowth Tools) are Blueprints
+// too and keep their own names.
+constexpr uint32_t kConstructionHammerItem = 693164685; // Tool_Quickbuilder_Hammer
+constexpr uint32_t kDecayToolItem = 3286071567;         // Tool_Building_Decay: its Building_Decay_Shape_*
+constexpr uint32_t kOvergrowthToolItem = 3196782416;    // Tool_Building_Overgrowth: Building_Overgrowth_Shape_*
+
+bool ReadByte(const uint8_t* p, uint8_t& out);
+
+// The item a blueprint or an NPC's summoning staff is listed as, or 0 for anything else.
+uint32_t BlueprintTool(uint32_t itemId)
+{
+    // An NPC's summoning staff ("NPC_..."): one Summoning Staff entry for all of them.
+    if (_strnicmp(inv::Describe(itemId).raw, "NPC_", 4) == 0)
+        return kSummoningStaffItem;
+    uint8_t category = 0;
+    const uint8_t* info = inv::ItemInfo(itemId);
+    if (!info || !ReadByte(info + kItemCategory, category) || category != kCategoryBlueprints)
+        return 0;
+    const char* raw = inv::Describe(itemId).raw;
+    if (_strnicmp(raw, "Tool_", 5) == 0)
+        return 0;
+    if (_strnicmp(raw, "Building_Decay_", 15) == 0)
+        return kDecayToolItem;
+    if (_strnicmp(raw, "Building_Overgrowth_", 20) == 0)
+        return kOvergrowthToolItem;
+    return kConstructionHammerItem;
+}
+
+std::string ToolName(uint32_t tool)
+{
+    std::string name = inv::ItemInfo(tool) ? ItemName(tool) : std::string();
+    if (!name.empty() && name.rfind("item ", 0) != 0)
+        return name;
+    return tool == kDecayToolItem        ? "Decay Tool"
+           : tool == kOvergrowthToolItem ? "Overgrowth Tool"
+           : tool == kSummoningStaffItem ? "Summoning Staff"
+                                         : "Construction Hammer";
+}
+
+// What a search matches an item by (lower case).
+std::string MatchText(uint32_t itemId, const std::string& name)
+{
+    uint32_t tool = BlueprintTool(itemId);
+    return Lower(tool ? ToolName(tool) : name);
+}
+
 std::string SearchName(uint32_t itemId)
 {
     std::string name = ItemName(itemId);
+    if (uint32_t tool = BlueprintTool(itemId))
+        return ToolName(tool) + " (" + name + ")";
     if (_strnicmp(inv::Describe(itemId).raw, "NPC_", 4) != 0)
         return name;
     std::string staff = inv::ItemInfo(kSummoningStaffItem) ? ItemName(kSummoningStaffItem) : std::string();
@@ -529,17 +581,15 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
         ix.positions[crafters[c].entity] = {p[0], p[1], p[2]};
         const std::vector<uint32_t>* makes = recipes::Makes(crafters[c].workshop);
         for (size_t i = 0; makes && i < makes->size(); ++i) {
-            uint32_t item = (*makes)[i];
+            uint32_t tool = BlueprintTool((*makes)[i]);
+            uint32_t item = tool ? tool : (*makes)[i];
             auto it = byItem.find(item);
             if (it == byItem.end()) {
                 if (!inv::ItemInfo(item))
                     continue;
                 std::string name = SearchName(item);
-                uint8_t category = 0;
-                const uint8_t* info = inv::ItemInfo(item);
-                bool blueprint = info && ReadByte(info + kItemCategory, category) && category == kCategoryBlueprints;
                 it = byItem.emplace(item, ix.entries.size()).first;
-                ix.entries.push_back({name, blueprint ? std::string() : Lower(name), Kind::Item, item, 0, {}});
+                ix.entries.push_back({name, MatchText(item, name), Kind::Item, item, 0, {}});
             }
             auto& list = ix.entries[it->second].crafters;
             if (std::find(list.begin(), list.end(), crafters[c].entity) == list.end())
@@ -565,6 +615,7 @@ Index BuildIndex()
     std::map<std::string, size_t> byChestName;
     std::map<std::string, size_t> byGroup;
     std::map<uint32_t, std::vector<size_t>> itemGroups;
+    std::set<uint32_t> grouped; // items whose kinds are counted
     for (uint32_t chest : chests) {
         float p[3];
         if (!inv::Position(chest, p))
@@ -590,22 +641,25 @@ Index BuildIndex()
             for (const inv::Stack& s : owner.pages[pg].slots) {
                 if (!s.itemId || !s.count)
                     continue;
-                auto it = byItem.find(s.itemId);
+                // Blueprints are one entry, their tool's: "Construction Hammer - 3 in 1 chest".
+                uint32_t tool = BlueprintTool(s.itemId);
+                uint32_t key = tool ? tool : s.itemId;
+                auto it = byItem.find(key);
                 size_t e;
                 if (it == byItem.end()) {
                     g_step = "item name";
-                    std::string n = SearchName(s.itemId);
+                    std::string n = tool ? ToolName(tool) : SearchName(s.itemId);
                     e = ix.entries.size();
-                    byItem[s.itemId] = e;
-                    // A blueprint's own name is what it builds ("Single Wall Block 0,5m"), but the
-                    // game shows it as the Construction Hammer: it is found only by its kind
-                    // (Blueprints), never by that name.
-                    uint8_t category = 0;
-                    const uint8_t* info = inv::ItemInfo(s.itemId);
-                    bool blueprint = info && ReadByte(info + kItemCategory, category) && category == kCategoryBlueprints;
-                    ix.entries.push_back({n, blueprint ? std::string() : Lower(n), Kind::Item, s.itemId, 0, {}});
+                    byItem[key] = e;
+                    ix.entries.push_back({n, Lower(n), Kind::Item, key, 0, {}});
+                } else {
+                    e = it->second;
+                }
+                if (tool && std::find(ix.entries[e].items.begin(), ix.entries[e].items.end(), s.itemId) == ix.entries[e].items.end())
+                    ix.entries[e].items.push_back(s.itemId); // lit in an opened chest
+                if (grouped.insert(s.itemId).second) {
                     g_step = "item groups";
-                    for (const auto& [gname, gkindAndRarity] : ItemGroups(s.itemId, n)) {
+                    for (const auto& [gname, gkindAndRarity] : ItemGroups(s.itemId, ix.entries[e].name)) {
                         uint8_t gkind = gkindAndRarity & 0x0f;
                         std::string key = std::to_string(gkind) + ":" + Lower(gname);
                         auto g = byGroup.find(key);
@@ -619,8 +673,6 @@ Index BuildIndex()
                         ix.entries[g->second].items.push_back(s.itemId);
                         itemGroups[s.itemId].push_back(g->second);
                     }
-                } else {
-                    e = it->second;
                 }
                 auto addTo = [&](size_t x) {
                     ix.entries[x].total += s.count;
@@ -1150,7 +1202,7 @@ bool Search(const std::string& text, bool picked = false)
     // containing it ("stone" finds Stone and Rough Stone Block).
     bool exact = false;
     for (const Entry& e : g_index.entries) {
-        if (picked && e.lower == q) {
+        if (picked && Lower(e.name) == q) { // a blueprint matches by the hammer, picked by its own name
             add(e);
             exact = true;
         }
