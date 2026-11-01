@@ -24,6 +24,7 @@ enum Id {
     WeaponGems,
     NoChests,       // inside a base without storage chests
     MadeHere,       // an item no chest holds that an NPC or station of the base makes
+    MadeHereLocked, // the same, but the recipe isn't unlocked yet
     Count
 };
 

@@ -19,4 +19,10 @@ const std::vector<uint32_t>* Makes(uint32_t workshop);
 
 bool IsWorkshop(uint32_t workshop);
 
+// Any recipe's id (also those of your own crafting menu).
+bool IsRecipe(uint32_t id);
+
+// The recipes of a workshop that make itemId (their recipe ids).
+const std::vector<uint32_t>* RecipeIds(uint32_t workshop, uint32_t itemId);
+
 } // namespace recipes

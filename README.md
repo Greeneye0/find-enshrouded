@@ -55,7 +55,8 @@ Restart the game after changing them.
   Multishot, ...).
 - **Who can make it**: the NPCs and crafting stations of the base that can make a found item
   light up too (`bandage` lights the Hunter). Items no chest holds but the base can make are
-  suggested as `can be made here`.
+  suggested as `can be made here`, or `made here, not unlocked yet` when you haven't unlocked
+  the recipe.
 - **Chest names you gave yourself** with Rename. The game's own chest titles,
   "Storage Chest" and its variants (Large Storage Chest and the like), are not searched:
   every unnamed chest would match.

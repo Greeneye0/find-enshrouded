@@ -1,0 +1,1 @@
+Recipes you haven't unlocked yet are marked: the NPC or station still lights up, and the suggestion says "made here, not unlocked yet" (search "oven" before the Farmer can make one).

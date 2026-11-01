@@ -36,6 +36,7 @@
 #include <vector>
 #include "config.h"
 #include "ecsnames.h"
+#include "knowledge.h"
 #include "recipes.h"
 #include "find.h"
 #include "inventory.h"
@@ -155,6 +156,7 @@ struct Entry {
     uint32_t total;   // items in the base
     std::vector<uint32_t> chests;
     std::vector<uint32_t> crafters; // Item: NPCs and stations of the base that make it
+    bool locked = false;            // Item: none of them can make it yet (recipe not unlocked)
     uint32_t kinds = 0; // Group: how many different items
     std::vector<uint32_t> items; // Group: those items
     uint8_t group = 0;           // Group: what kind (GroupCategory...)
@@ -572,6 +574,8 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
         if (!recipes::Load(info))
             return;
     }
+    bool knows = knowledge::Refresh(recipes::IsRecipe);
+    std::map<size_t, bool> unlocked; // entries with crafters: whether one of them can make it
     std::vector<inv::Crafter> crafters(256);
     int n = inv::FindCrafters(g_baseLo, g_baseHi, recipes::IsWorkshop, crafters.data(), static_cast<int>(crafters.size()));
     for (int c = 0; c < n; ++c) {
@@ -594,8 +598,15 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
             auto& list = ix.entries[it->second].crafters;
             if (std::find(list.begin(), list.end(), crafters[c].entity) == list.end())
                 list.push_back(crafters[c].entity);
+            bool& can = unlocked[it->second];
+            const std::vector<uint32_t>* ids = recipes::RecipeIds(crafters[c].workshop, (*makes)[i]);
+            for (size_t r = 0; !can && ids && r < ids->size(); ++r)
+                can = knowledge::Known((*ids)[r]);
         }
     }
+    // Without the player's knowledge nothing is called locked.
+    for (auto& [entry, can] : unlocked)
+        ix.entries[entry].locked = knows && !can;
 }
 
 // Every item and named chest of the base, built when the search opens.
@@ -771,7 +782,7 @@ std::string Describe(const Entry& e)
         return std::string(strings::Get(label)) + ": " + name + kDash + strings::KindCount(e.kinds, n);
     }
     if (!n && !e.crafters.empty())
-        return name + kDash + strings::Get(strings::MadeHere);
+        return name + kDash + strings::Get(e.locked ? strings::MadeHereLocked : strings::MadeHere);
     return name + kDash + strings::ItemCount(e.total, n);
 }
 
@@ -1184,6 +1195,7 @@ bool Search(const std::string& text, bool picked = false)
     std::vector<uint32_t> crafters; // NPCs and stations that make what matched
     std::vector<uint32_t> items;
     std::string matched; // for the log
+    int locked = 0;      // matched items whose crafters can't make them yet
     auto add = [&](const Entry& e) {
         if (matched.size() < 600)
             matched += (matched.empty() ? "" : ", ") + e.name + (e.kind == Kind::Group ? " (kind)" : e.kind == Kind::Chest ? " (chest)" : "");
@@ -1197,6 +1209,7 @@ bool Search(const std::string& text, bool picked = false)
             items.push_back(e.itemId);
         for (uint32_t id : e.items)
             items.push_back(id);
+        locked += e.locked ? 1 : 0;
     };
     // A suggestion picked with Tab: just that item, chest or kind. Typed text: every name
     // containing it ("stone" finds Stone and Rough Stone Block).
@@ -1244,8 +1257,8 @@ bool Search(const std::string& text, bool picked = false)
         DevLog("  glowing:%s", ids.c_str());
     }
 #endif
-    Log("find '%s': %d of %d chests glow, %d items light up in them, %d NPCs and stations make them%s", q.c_str(),
-        chestsLit, g_index.chestCount, static_cast<int>(items.size()), static_cast<int>(crafters.size()),
+    Log("find '%s': %d of %d chests glow, %d items light up in them, %d NPCs and stations make them (%d not unlocked)%s",
+        q.c_str(), chestsLit, g_index.chestCount, static_cast<int>(items.size()), static_cast<int>(crafters.size()), locked,
         g_nativeReady ? "" : " (no chest outline: see above)");
     return true;
 }

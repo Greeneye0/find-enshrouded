@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.1
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.2
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -34,7 +34,8 @@ USE
   Stone Block, "arrow" finds every arrow but not Narrow Wall.
 - The NPCs and crafting stations of your base that can make what you searched for light up
   too: "bandage" lights your Hunter. Items no chest holds but your base can make are
-  suggested as "can be made here".
+  suggested as "can be made here", or "made here, not unlocked yet" when you haven't
+  unlocked the recipe yet.
 - A suggestion picked with Tab or the mouse finds just that item, chest or kind.
 - The matching chests pulse with the game's own highlight. A chest stops pulsing a few
   seconds after you reach it or open it. Every pulse ends after three minutes, with your
@@ -104,6 +105,11 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.2
+- Recipes you haven't unlocked yet are marked: the NPC or station still lights up, and the
+  suggestion says "made here, not unlocked yet" (search "oven" before the Farmer can
+  make one).
+
 1.2.1
 - The Construction Hammer is found by its name: as a Blueprint it was left out. Your
   hammers and their saved blueprints are one "Construction Hammer" entry; Decay and

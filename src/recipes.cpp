@@ -4,6 +4,7 @@
 // The game keeps its resources in one large allocation, written as stored: arrays and strings are
 // {int32 offset from the field, uint32 count}. keen::RecipeRegistryResource starts with its
 // recipes array; each RecipeInfo (0xa8 bytes, build 1273043) holds
+//   + 0x10 recipe id (the player's knowledge holds it once the recipe is unlocked),
 //   + 0x24 workshop id (0: your own crafting menu; an NPC's trade or a station otherwise),
 //   + 0x28 inputs  {offset, count}, ItemStack 0x30 bytes each,
 //   + 0x30 outputs {offset, count}, ItemStack: item GUID, then + 0x10 the item id, + 0x14 amount,
@@ -13,12 +14,14 @@
 #include <windows.h>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include "log.h"
 
 namespace recipes {
 namespace {
 
 constexpr size_t kRecipeSize = 0xa8;
+constexpr size_t kRecipeId = 0x10;
 constexpr size_t kWorkshop = 0x24;
 constexpr size_t kInputs = 0x28;
 constexpr size_t kOutputs = 0x30;
@@ -28,6 +31,8 @@ constexpr size_t kStackItem = 0x10;
 
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_madeBy; // item -> workshops
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_makes;  // workshop -> items
+std::unordered_map<uint64_t, std::vector<uint32_t>> g_recipeIds; // workshop << 32 | item -> recipes
+std::unordered_set<uint32_t> g_allRecipeIds;
 bool g_loaded = false;
 
 struct Span {
@@ -81,8 +86,10 @@ int TakeRegistry(const Span& s, const uint8_t* header)
     for (uint32_t i = 0; i < count; ++i) {
         const uint8_t* r = records + i * kRecipeSize;
         uint32_t workshop = *reinterpret_cast<const uint32_t*>(r + kWorkshop);
+        g_allRecipeIds.insert(*reinterpret_cast<const uint32_t*>(r + kRecipeId));
         if (!workshop)
             continue;
+        uint32_t recipeId = *reinterpret_cast<const uint32_t*>(r + kRecipeId);
         uint32_t outputs;
         const uint8_t* out = Array(s, r + kOutputs, kStackSize, outputs);
         for (uint32_t o = 0; o < outputs; ++o) {
@@ -93,6 +100,7 @@ int TakeRegistry(const Span& s, const uint8_t* header)
             auto& makes = g_makes[workshop];
             if (std::find(makes.begin(), makes.end(), item) == makes.end())
                 makes.push_back(item);
+            g_recipeIds[static_cast<uint64_t>(workshop) << 32 | item].push_back(recipeId);
         }
         ++taken;
     }
@@ -168,5 +176,13 @@ const std::vector<uint32_t>* Makes(uint32_t workshop)
 }
 
 bool IsWorkshop(uint32_t workshop) { return g_makes.count(workshop) != 0; }
+
+bool IsRecipe(uint32_t id) { return g_allRecipeIds.count(id) != 0; }
+
+const std::vector<uint32_t>* RecipeIds(uint32_t workshop, uint32_t itemId)
+{
+    auto it = g_recipeIds.find(static_cast<uint64_t>(workshop) << 32 | itemId);
+    return it == g_recipeIds.end() ? nullptr : &it->second;
+}
 
 } // namespace recipes
