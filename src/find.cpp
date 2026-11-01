@@ -1270,6 +1270,62 @@ bool Edge(int slot, bool down)
     return pressed;
 }
 
+// Hotkey presses as they arrive. The check in Tick sees what is held at that moment, and a key
+// from a programmable keypad or mouse macro goes down and up within one frame, so it would be
+// missed. The game reads its keys as raw input (WM_INPUT); a message hook on the game window's
+// thread reads the same input as it leaves the queue and leaves it for the game.
+HHOOK g_keyHook = nullptr;
+std::atomic<bool> g_hotkeyArrived{false};
+bool g_rawShift = false, g_rawCtrl = false, g_rawAlt = false; // modifiers held, from the same input
+
+LRESULT CALLBACK KeyHookProc(int code, WPARAM wp, LPARAM lp)
+{
+    hot::Lease lease;
+    auto* m = reinterpret_cast<const MSG*>(lp);
+    if (lease && code == HC_ACTION && wp == PM_REMOVE && m->message == WM_INPUT) {
+        RAWINPUT raw;
+        UINT size = sizeof(raw);
+        if (GetRawInputData(reinterpret_cast<HRAWINPUT>(m->lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) != UINT(-1) &&
+            raw.header.dwType == RIM_TYPEKEYBOARD) {
+            bool down = !(raw.data.keyboard.Flags & RI_KEY_BREAK);
+            USHORT vk = raw.data.keyboard.VKey;
+            if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT)
+                g_rawShift = down;
+            else if (vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL)
+                g_rawCtrl = down;
+            else if (vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU)
+                g_rawAlt = down;
+            else if (down && vk == g_hotkey.key && g_rawShift == g_hotkey.shift && g_rawCtrl == g_hotkey.ctrl &&
+                     g_rawAlt == g_hotkey.alt)
+                g_hotkeyArrived = true;
+        }
+    }
+    return CallNextHookEx(nullptr, code, wp, lp);
+}
+
+void HookKeys(bool on)
+{
+    if (!on) {
+        if (g_keyHook)
+            UnhookWindowsHookEx(g_keyHook);
+        g_keyHook = nullptr;
+        return;
+    }
+    if (g_keyHook)
+        return;
+    static ULONGLONG lastTry = 0;
+    if (GetTickCount64() - lastTry < 5000) // until the game window is there
+        return;
+    lastTry = GetTickCount64();
+    HWND hwnd = GameWindow();
+    DWORD thread = hwnd ? GetWindowThreadProcessId(hwnd, nullptr) : 0;
+    if (!thread)
+        return;
+    g_keyHook = SetWindowsHookExW(WH_GETMESSAGE, &KeyHookProc, nullptr, thread);
+    Log(g_keyHook ? "hotkey: watching the game's keyboard input" : "hotkey: no message hook (error %lu), short key presses may be missed",
+        GetLastError());
+}
+
 SRWLOCK g_requestLock = SRWLOCK_INIT;
 char g_request[128]{};
 bool g_requestPending = false;
@@ -1315,7 +1371,9 @@ void Tick()
     // Modifiers must match exactly, so Shift+F does not also fire on Ctrl+Shift+F.
     bool down = focused && held(g_hotkey.key) && held(VK_SHIFT) == g_hotkey.shift &&
                 held(VK_CONTROL) == g_hotkey.ctrl && held(VK_MENU) == g_hotkey.alt;
-    bool pressed = down && !g_keyWasDown;
+    HookKeys(true);
+    bool arrived = g_hotkeyArrived.exchange(false); // a press too short for the check above
+    bool pressed = (down && !g_keyWasDown) || (arrived && focused);
     g_keyWasDown = down;
     // Only while playing or in the inventory: not while typing in chat (43), renaming (47), a
     // signpost (19) or any other screen, where Shift+F is just a capital F.
@@ -1761,6 +1819,7 @@ void SpatialMarkersHookBody(void* state, void* arg)
 bool HotPrepare() {
     if (g_open) return false;
     g_hotPaused = true;
+    HookKeys(false); // the hook procedure is in this DLL
     nativehighlight::Clear();
     ui::LightIcons(0, 0);
     return true;

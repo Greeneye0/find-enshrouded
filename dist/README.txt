@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.3
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.4
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -105,6 +105,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.4
+- The hotkey opens the search every time, also from a programmable keypad or mouse macro:
+  Find caught it only while it was held, so a very short press was often missed.
+Reported bugs fixed:
+- Shift+7 had to be pressed over and over to open the search (reported by webbj8150).
+
 1.2.3
 - Chests lit through walls are drawn as smooth see-through outlines instead of a blocky,
   pixelated image, and drawing them takes much less time each frame.

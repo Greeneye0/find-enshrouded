@@ -1,0 +1,2 @@
+The hotkey opens the search every time, also from a programmable keypad or mouse macro: Find caught it only while it was held, so a very short press was often missed.
+Reported bug fixed: Shift+7 had to be pressed over and over to open the search (reported by webbj8150).
