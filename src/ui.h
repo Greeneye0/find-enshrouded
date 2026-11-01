@@ -100,3 +100,6 @@ bool CursorInUi(float& x, float& y);
 void ClearDialog(Dialog* d);
 
 } // namespace ui
+
+namespace smooth_highlight { struct Batch; }
+namespace ui { bool DrawMesh(const smooth_highlight::Batch& batch); }

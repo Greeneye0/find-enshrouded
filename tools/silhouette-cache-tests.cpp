@@ -6,6 +6,7 @@
 std::vector<ui::SolidRect> emitted;
 void Log(const char*,...){}
 namespace ui {
+bool DrawMesh(const smooth_highlight::Batch&){return true;}
 bool CaptureProjection(ProjectionFrame&){return false;}
 void DrawSolids(const SolidRect* r,size_t count,uint32_t,float){emitted.insert(emitted.end(),r,r+count);}
 }

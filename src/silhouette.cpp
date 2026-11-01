@@ -6,6 +6,8 @@
 #include <map>
 #include <string>
 #include "silhouette.h"
+#include "../../common/highlight_work.h"
+#include "../../common/smooth_highlight.h"
 #include "silhouette_mesh.h"
 #include "silhouette_raster.h"
 #include "silhouette_runs.h"
@@ -56,38 +58,52 @@ Scratch g_scratch;
 // (twelve 8.5k-triangle hazelnut bushes once lit as chests) fragment into tens of thousands of runs.
 // Each chest coarsens its grid until it fits its share of kFrameRects (at most kChestRects), and
 // the frame stops submitting once kFrameRects is spent.
-constexpr size_t kChestRects=3000,kMinChestRects=800,kFrameRects=16000;
+constexpr size_t kChestRects=highlight_work::chestRects,kMinChestRects=64,kFrameRects=highlight_work::frameRects;
 size_t Count(const Prepared& prepared){size_t n=0;for(int k=1;k<=6;++k)n+=prepared.strips[k].size();return n;}
-void Submit(const Snapshot& s,const Prepared& prepared,size_t* budget) {
+bool Submit(const Snapshot& s,const Prepared& prepared,size_t* budget) {
     const auto& strips=prepared.strips;
-    if(budget){size_t n=Count(prepared);if(n>*budget)return;*budget-=n;}
+    if(budget){size_t n=Count(prepared);if(n>*budget)return false;*budget-=n;}
     float pulse=.5f-.5f*std::cos(float(GetTickCount64()%1800)/1800.f*6.283185307f);
     for(int k=1;k<=4;++k)ui::DrawSolids(strips[k].data(),strips[k].size(),0xff6ecdff,s.alpha*(.08f+k*.025f+(.08f+k*.025f)*pulse));
     ui::DrawSolids(strips[6].data(),strips[6].size(),0xff6ecdff,s.alpha*(.08f+.10f*pulse));
     ui::DrawSolids(strips[5].data(),strips[5].size(),0xff6ecdff,s.alpha*(.45f+.40f*pulse));
+    return true;
 }
-void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camera,Prepared& prepared,size_t* budget=nullptr,size_t cap=kChestRects){
-    if(mesh.vertices.empty())return;
+void Fallback(const Snapshot& s, const ui::ProjectionFrame& camera) {
+    float world[3]; for (int j=0;j<3;++j) world[j]=float(s.transform.position[j]/4294967296.0);
+    float x,y,z;
+    if (!camera.Project(world,x,y,z) || x<camera.viewport[0] || y<camera.viewport[1] ||
+        x>camera.viewport[0]+camera.viewport[2] || y>camera.viewport[1]+camera.viewport[3]) return;
+    const ui::SolidRect marker[] = {{x-6,y-6,12,2},{x-6,y+4,12,2},{x-6,y-4,2,8},{x+4,y-4,2,8}};
+    ui::DrawSolids(marker,4,0xff6ecdff,s.alpha*.65f);
+}
+
+bool DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camera,Prepared& prepared,size_t* budget=nullptr,size_t cap=kChestRects,highlight_work::Frame* work=nullptr){
+    if(mesh.vertices.empty())return false;
     bool sameGeometry=prepared.mesh==&mesh && !memcmp(&prepared.transform,&s.transform,sizeof(s.transform));
-    if(sameGeometry && prepared.imageValid && !memcmp(&prepared.camera,&camera,sizeof(camera))) { Submit(s,prepared,budget);return; }
+    if(sameGeometry && prepared.imageValid && !memcmp(&prepared.camera,&camera,sizeof(camera))) { return Submit(s,prepared,budget); }
     prepared.imageValid=false;
+    if ((budget && !*budget) || (work && !work->Rebuild())) return false;
     auto& points=prepared.points;auto& worlds=prepared.worlds;auto& faces=prepared.faces;
     points.clear();points.reserve(mesh.vertices.size());
     float minx=1e9f,miny=1e9f,maxx=-1e9f,maxy=-1e9f;
     const auto& t=s.transform;
-    double qnorm=0;for(float q:t.rotation){if(!std::isfinite(q))return;qnorm+=q*q;}
-    if(std::fabs(qnorm-1)>0.02)return;
-    for(float scale:t.scale)if(!std::isfinite(scale)||std::fabs(scale)>20)return;
+    double qnorm=0;for(float q:t.rotation){if(!std::isfinite(q))return false;qnorm+=q*q;}
+    if(std::fabs(qnorm-1)>0.02)return false;
+    for(float scale:t.scale)if(!std::isfinite(scale)||std::fabs(scale)>20)return false;
     if(!sameGeometry){
+        prepared.mesh=nullptr; // Partial geometry must not become a cache hit after interruption.
         worlds.clear();worlds.reserve(mesh.vertices.size());
         float qx=t.rotation[0],qy=t.rotation[1],qz=t.rotation[2],qw=t.rotation[3];
         for(auto p:mesh.vertices){
+            if(work && worlds.size()%64==0 && !work->Available()) return false;
             for(int j=0;j<3;++j)p[j]*=t.scale[j];
             float cx=2*(qy*p[2]-qz*p[1]),cy=2*(qz*p[0]-qx*p[2]),cz=2*(qx*p[1]-qy*p[0]);
             worlds.push_back({float(t.position[0]/4294967296.0)+p[0]+qw*cx+qy*cz-qz*cy,float(t.position[1]/4294967296.0)+p[1]+qw*cy+qz*cx-qx*cz,float(t.position[2]/4294967296.0)+p[2]+qw*cz+qx*cy-qy*cx});
         }
         faces.assign(mesh.indices.size()/3,{});
         for(size_t i=0;i<mesh.indices.size();i+=3){
+        if(work && i%96==0 && !work->Available()) return false;
             auto p=worlds[mesh.indices[i]],q=worlds[mesh.indices[i+1]],r=worlds[mesh.indices[i+2]];
             std::array<float,3> a{},b{};for(int j=0;j<3;++j){a[j]=q[j]-p[j];b[j]=r[j]-p[j];}
             auto& f=faces[i/3];f.normal={a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]};
@@ -99,22 +115,25 @@ void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camer
         prepared.mesh=&mesh;prepared.transform=s.transform;
     }
     for(const auto& world:worlds){
-        float x,y,z;if(!camera.Project(world.data(),x,y,z)||std::fabs(x)>20000||std::fabs(y)>20000)return;
+        if(work && points.size()%64==0 && !work->Available()) return false;
+        float x,y,z;if(!camera.Project(world.data(),x,y,z)||std::fabs(x)>20000||std::fabs(y)>20000)return false;
         points.push_back({x,y,1.f/z});minx=std::min(minx,x);maxx=std::max(maxx,x);miny=std::min(miny,y);maxy=std::max(maxy,y);
     }
     // Entirely offscreen images cannot contribute. Keep a margin for the halo.
-    if(maxx<camera.viewport[0]-10 || maxy<camera.viewport[1]-10 || minx>camera.viewport[0]+camera.viewport[2]+10 || miny>camera.viewport[1]+camera.viewport[3]+10)return;
+    if(maxx<camera.viewport[0]-10 || maxy<camera.viewport[1]-10 || minx>camera.viewport[0]+camera.viewport[2]+10 || miny>camera.viewport[1]+camera.viewport[3]+10)return false;
     float step=std::max(1.f,std::max(maxx-minx,maxy-miny)/250.f);
-    if(maxx-minx<1||maxy-miny<1||step>20)return;
+    if(maxx-minx<1||maxy-miny<1||step>20)return false;
     const float originx=minx,originy=miny;
     auto& rectangles=g_scratch.rectangles;
     for(int attempt=0;;++attempt){
+    if(work && !work->Available()) return false;
     minx=originx;miny=originy;
     int w=int(std::ceil((maxx-minx)/step))+7,h=int(std::ceil((maxy-miny)/step))+7;
     minx-=3*step;miny-=3*step;
     auto& mask=g_scratch.mask;mask.assign(w*h,0);
     auto& surface=g_scratch.surface;surface.assign(w*h,{});
     for(size_t i=0;i<mesh.indices.size();i+=3){
+        if(work && i%96==0 && !work->Available()) return false;
         const auto& face=faces[i/3];if(!face.valid)continue;
         std::array<float,3> p[3];
         for(int j=0;j<3;++j){auto v=points[mesh.indices[i+j]];p[j]={(v[0]-minx)/step,(v[1]-miny)/step,v[2]};}
@@ -136,30 +155,45 @@ void DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camer
             SurfaceCrease(surface[at],surface[at+1])||SurfaceCrease(surface[at],surface[at+w]))labels[at]=5;
         else labels[at]=1+surface[at].shade;
     }
+    if(work && !work->Available()) return false;
     MergeRuns(labels,w,h,rectangles);
     if(rectangles.size()<=cap)break;
     // Rectangles grow roughly with the grid's area, so scale the step by the square root.
-    if(attempt>=4)return;
+    if(attempt>=4)return false;
     step*=std::max(1.25f,std::sqrt(float(rectangles.size())/cap)*1.1f);
     }
     auto& strips=prepared.strips;for(auto& v:strips)v.clear();
     for(const auto& r:rectangles)strips[r.kind].push_back({minx+r.x*step,miny+r.y*step,r.w*step,r.h*step});
     prepared.camera=camera;prepared.imageValid=true;
-    Submit(s,prepared,budget);
+    return Submit(s,prepared,budget);
 
 }
 }
 void Draw(const Snapshot* snapshots,unsigned count){
     ui::ProjectionFrame camera;if(!ui::CaptureProjection(camera))return;
-    count=std::min(count,256u);size_t budget=kFrameRects,cap=count?std::clamp(kFrameRects/count,kMinChestRects,kChestRects):kChestRects;
-    for(unsigned i=0;i<count;++i){const auto& s=snapshots[i];std::string key(reinterpret_cast<const char*>(s.asset+0x110),16);key.append(reinterpret_cast<const char*>(s.mesh),56);
-        auto it=cache.find(key);if(it==cache.end()){
-            if(cache.size()>=64)continue;
-            Mesh mesh;std::vector<uint8_t> content;bool ok=Content(s.asset+0x110,content)&&Decode(content,s.asset,s.mesh,mesh);
-            Log("silhouette: mesh decoded=%u vertices=%zu triangles=%zu",ok?1:0,mesh.vertices.size(),mesh.indices.size()/3);it=cache.emplace(key,std::move(mesh)).first;
-        }
-        DrawOne(s,it->second,camera,g_prepared[i],&budget,cap);
-    }
-}
-}
+    count=std::min(count,256u);
 
+    static std::map<std::string,std::vector<smooth_highlight::Point3>> supports;
+    static smooth_highlight::Batch batch;batch.vertices.clear();batch.indices.clear();
+    unsigned loads=0,drawn=0;
+    float pulse=.65f+.35f*(.5f-.5f*std::cos(float(GetTickCount64()%1800)/1800.f*6.283185307f));
+    for(unsigned i=0;i<count;++i){
+        const auto& s=snapshots[i];
+        std::string key(reinterpret_cast<const char*>(s.asset+0x110),16);key.append(reinterpret_cast<const char*>(s.mesh),56);
+        auto found=supports.find(key);
+        if(found==supports.end()){
+            if(supports.size()>=64||loads++)continue;
+            auto mesh=cache.find(key);
+            if(mesh==cache.end()){
+                Mesh decoded;std::vector<uint8_t> content;
+                bool ok=Content(s.asset+0x110,content)&&Decode(content,s.asset,s.mesh,decoded);
+                Log("smooth silhouette: decoded=%u vertices=%zu",ok?1:0,decoded.vertices.size());
+                mesh=cache.emplace(key,std::move(decoded)).first;
+            }
+            found=supports.emplace(key,smooth_highlight::Support(mesh->second.vertices)).first;
+        }
+        drawn+=smooth_highlight::Project(found->second,s.transform,camera,0xff6ecdff,s.alpha*pulse,batch)?1:0;
+    }
+    ui::DrawMesh(batch);
+}
+}

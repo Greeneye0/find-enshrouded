@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.2
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.3
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -105,6 +105,10 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.3
+- Chests lit through walls are drawn as smooth see-through outlines instead of a blocky,
+  pixelated image, and drawing them takes much less time each frame.
+
 1.2.2
 - Recipes you haven't unlocked yet are marked: the NPC or station still lights up, and the
   suggestion says "made here, not unlocked yet" (search "oven" before the Farmer can

@@ -1,0 +1,1 @@
+Chests lit through walls are drawn as smooth see-through outlines instead of a blocky, pixelated image, and drawing them takes much less time each frame.

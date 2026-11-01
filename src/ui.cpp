@@ -1,3 +1,4 @@
+#include "../../common/ui_mesh.h"
 #include "hotapi.h"
 // The game's immediate-mode UI (build 1269579).
 //
@@ -1155,3 +1156,11 @@ void ClearDialog(Dialog* d)
 }
 
 } // namespace ui
+
+namespace ui {
+bool DrawMesh(const smooth_highlight::Batch& batch) {
+    if(!G()||!g_begin||!g_end||!ui_mesh::Ready())return false;
+    Widget widget;g_begin(widget.raw,0);
+    bool result=ui_mesh::Draw(widget.raw,batch);g_end(widget.raw);return result;
+}
+}
