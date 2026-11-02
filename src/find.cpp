@@ -7,11 +7,11 @@
 //           the game's own UI.
 // 140c32210 the HUD's waypoint marker, inside the spatial elements window; chest glows are
 //           drawn right after it, in the same window.
-// 140845600 UiCommandLoop(app): every frame; the game client = *(*(app + 0x35280) + 0x1b8)
+// 140845600 UiCommandLoop(app): every frame; the game client = *(*(app + 0x352a0) + 0x1b8)
 //           (a different object than the UI's client at *(**(G + 0xd0) + 0x38)). Quick
 //           Deposit hooks it too: found by the code after its first 13 bytes, chained.
-// Base and chests as in Quick Deposit: client + 0x47d4e0 world; world + 0x2c08 player
-// position (int64, 32 fraction bits); world + 0x3eb8 base registry {+0x24 count, +0x30 bases
+// Base and chests as in Quick Deposit: client + 0x47d4e0 world; world + 0x2c18 player
+// position (int64, 32 fraction bits); world + 0x3ec8 base registry {+0x24 count, +0x30 bases
 // of 0x130: +0x00 magic chest ids, +0x08 count, +0xf0 min, +0x100 max}.
 // Item names: ItemInfo + 0x48 is the localized name's key.
 // 140852760 UiDispatch(gameClient, cmd): command 0x01 <screen> opens a HUD screen; the screen
@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 #include "config.h"
+#include "dialog_input.h"
 #include "ecsnames.h"
 #include "knowledge.h"
 #include "recipes.h"
@@ -64,9 +65,9 @@ void* volatile g_app = nullptr;
 
 constexpr size_t kClientWorld = 0x47d4e0;
 constexpr size_t kClientPlayer = 0x466b44;
-constexpr size_t kWorldPlayerPos = 0x2c08;
-constexpr size_t kWorldPermissions = 0x2c58;
-constexpr size_t kWorldBases = 0x3eb8;
+constexpr size_t kWorldPlayerPos = 0x2c18;
+constexpr size_t kWorldPermissions = 0x2c68;
+constexpr size_t kWorldBases = 0x3ec8;
 constexpr size_t kRegPermissions = 0x10;
 constexpr size_t kRegBaseCount = 0x24;
 constexpr size_t kRegBases = 0x30;
@@ -120,7 +121,7 @@ void* GameClient()
     void* app = g_app;
     if (!app)
         return nullptr;
-    void* ui = At<void*>(app, 0x35280);
+    void* ui = At<void*>(app, 0x352a0);
     return ui ? At<void*>(ui, 0x1b8) : nullptr;
 }
 
@@ -179,6 +180,7 @@ ULONGLONG g_afterArrivalMs = 3000;
 ui::Dialog* g_dialog = nullptr;
 const char* volatile g_step = "";
 bool g_open = false;
+dialog_input::Session g_dialogSession;
 bool g_hotPaused = false;
 volatile LONG64 g_devHoldUntil = 0;
 bool g_openedInventory = false; // the search opened the inventory screen and closes it again
@@ -1410,6 +1412,9 @@ void Tick()
         // While playing the mouse turns the camera and nothing would give the keyboard back:
         // put a screen behind the search that gives the UI the mouse (the inventory: Rename closes itself without a chest).
         g_openedInventory = Screen() == kScreenPlaying;
+        auto* sessionClient=GameClient();
+        g_dialogSession.Begin(Screen(),g_openedInventory?kScreenBehindSearch:kScreenInventory,
+            sessionClient?At<void*>(sessionClient,kClientWorld):nullptr,GetTickCount64());
         if (g_openedInventory) {
             OpenScreen(kScreenBehindSearch);
             LockCamera(true);
@@ -1429,6 +1434,13 @@ void Tick()
     }
     if (!g_open)
         return;
+
+    auto* sessionClient=GameClient();
+    if(g_dialogSession.Retire(Screen(),sessionClient?At<void*>(sessionClient,kClientWorld):nullptr,GetTickCount64())){
+        // Retire BEFORE drawing: a teleported/hidden dialog must not reactivate
+        // its editor in the new map or menu pass.
+        CloseSearch(" (screen/world transition)");return;
+    }
 
     if (g_openedInventory && Screen() == kScreenBehindSearch)
         g_screenReached = true;
@@ -1628,6 +1640,7 @@ void SafeTick()
     __try {
         Tick();
     } __except (FaultFilter(GetExceptionInformation(), "search")) {
+        __try{ui::ReleaseDialogInput();}__except(EXCEPTION_EXECUTE_HANDLER){}
         g_open = false;
         g_openedInventory = false;
         __try {
@@ -1862,7 +1875,7 @@ bool Init(const Config& config)
             playState = after - 18;
     }
     uint8_t* spatial = FindUnique("48 89 54 24 10 55 57 41 56 48 8D AC 24 00 FE FF FF");
-    uint8_t* loop = FindUnique("48 81 EC 98 00 00 00 48 8D 81 58 4F 03 00");
+    uint8_t* loop = FindUnique("48 81 EC 98 00 00 00 48 8D 81 78 4F 03 00");
     if (!playState || !spatial || !loop) {
         Log("signatures: play state %p, markers %p, command loop %p", playState, spatial, loop);
         return false;

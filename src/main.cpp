@@ -26,6 +26,11 @@ static bool StartFind(const char* how, const GreeneyeHost* host)
     const bool reload = hot::host && hot::host->generation > 1;
     Log("Find " FIND_VERSION " loaded (%s%s, thread %lu, %s)", how, reload ? ", reloaded" : "", GetCurrentThreadId(),
         reload ? "while the game runs" : ui::Client() ? "in a world already" : "before the game starts");
+    const auto* module = reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(module + reinterpret_cast<const IMAGE_DOS_HEADER*>(module)->e_lfanew);
+    if (nt->FileHeader.TimeDateStamp != 0x6ae4601e || nt->OptionalHeader.SizeOfImage != 0x2a40000) {
+        Log("Find: unsupported game layout; no hooks installed"); return false;
+    }
     Config config = LoadConfig();
     if (!ui::Init() || !inv::Init() || !find::Init(config)) {
         Log("inactive: this game version is not supported");

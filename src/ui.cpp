@@ -48,6 +48,7 @@
 #include "scan.h"
 #include "ui.h"
 #include "projection_frame.h"
+#include "dialog_input.h"
 
 namespace ui {
 namespace {
@@ -80,7 +81,7 @@ DialogInitFn g_dialogInit = nullptr;
 LocaTextFn g_locaText = nullptr;
 FieldStateFn g_originalFieldState = nullptr;
 SetEditTextFn g_setEditText = nullptr;
-constexpr uint64_t kTextFieldId = 0x64d2790860d9c7f6ull;
+uint64_t kTextFieldId = 0;
 constexpr size_t kStateEdit = 0x10;
 using CloseKeyboardFn = void (*)(void*, uint32_t);
 CloseKeyboardFn g_closeKeyboard = nullptr;
@@ -91,19 +92,19 @@ EndWidgetFn g_originalEnd = nullptr;
 BeginLabelFn g_beginLabel = nullptr;
 EndLabelFn g_endLabel = nullptr;
 void* g_afterButtons = nullptr; // return address of the dialog's "end the button row" call
-constexpr size_t kAssetSmallText = 0x10a0c;
+constexpr size_t kAssetSmallText = 0x10bbc;
 constexpr uint32_t kHintColour = 0xffc8c8c8;
 constexpr float kHintAlpha = 0.6f;
 
-constexpr size_t kAssetMarkerFill = 0xb968;
-constexpr size_t kAssetMarkerOutline = 0xb978;
-constexpr size_t kAssetMarkerIcon = 0xb988;
-constexpr size_t kAssetMarkerFillColour = 0xe2c8;
+constexpr size_t kAssetMarkerFill = 0xbae8;
+constexpr size_t kAssetMarkerOutline = 0xbaf8;
+constexpr size_t kAssetMarkerIcon = 0xbb08;
+constexpr size_t kAssetMarkerFillColour = 0xe448;
 constexpr size_t kLocaCancel = 0x2110;
 // FbUiPrimitives (assets + 0xd250): circle +0x00, circleOutline +0x10, circleSoftGlow +0x20,
 // ringSoftGlow +0x30, triangle +0x50 (the menu arrow, 0xd2a0), gradients +0xa0.
-constexpr size_t kAssetSoftGlow = 0xd250 + 0x20;
-constexpr size_t kAssetRingGlow = 0xd250 + 0x30;
+constexpr size_t kAssetSoftGlow = 0xd3d0 + 0x20;
+constexpr size_t kAssetRingGlow = 0xd3d0 + 0x30;
 
 uint8_t* Assets()
 {
@@ -302,8 +303,8 @@ bool g_slotLit = false;             // ...and its highlight is drawn
 int g_slotCalls = 0, g_slotWanted = 0, g_slotDraws = 0; // diagnostics while lighting is on
 uint32_t g_slotSeen[8] = {};
 std::vector<uint32_t> g_slotIds; // diagnostics: distinct item ids the slots showed
-constexpr size_t kAssetBoxInnerGlow = 0xd250 + 0x120;
-constexpr size_t kAssetGlowBoxSmall = 0xd250 + 0x140;
+constexpr size_t kAssetBoxInnerGlow = 0xd3d0 + 0x120;
+constexpr size_t kAssetGlowBoxSmall = 0xd3d0 + 0x140;
 ImageFn g_originalImage = nullptr;
 DrawRealFn g_originalDrawReal = nullptr;
 std::vector<std::array<uint8_t, 16>> g_iconRefs; // the wanted items' icon references
@@ -633,6 +634,14 @@ bool Init()
             reinterpret_cast<void*>(g_beginLabel), reinterpret_cast<void*>(g_endLabel), rowEnd);
     }
     // Optional: without these Tab still selects, but cannot fill in the field.
+    auto* fieldIdSite=FindUnique(dialog_input::fieldIdPattern);
+    uint8_t fieldIdCode[30]{};
+    if(fieldIdSite)hot::Read(fieldIdSite,fieldIdCode,sizeof(fieldIdCode));
+    if(!fieldIdSite||FunctionStart(fieldIdSite)!=reinterpret_cast<uint8_t*>(g_dialog)||
+       !dialog_input::FieldId(fieldIdCode,sizeof(fieldIdCode),kTextFieldId)){
+        Log("dialog: native text-field identity unavailable; refusing unsafe input ownership");return false;
+    }
+    Log("dialog: native text-field id %016llx",static_cast<unsigned long long>(kTextFieldId));
     auto* fieldState = FindUnique("40 53 48 83 EC 30 48 8B 49 08 4C 8D 0D ?? ?? ?? ?? 44 89 44 24 20 41 B8 90 19 00 00");
     g_setEditText = reinterpret_cast<SetEditTextFn>(FindUnique("48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 B8 40 18 00 00"));
     if (!fieldState || !g_setEditText || !HookFieldState(fieldState)) {
@@ -893,6 +902,9 @@ uint8_t* EndFieldEdit()
     auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
     if (!g_findEditState || !owner || owner != g_findEditOwner || !*reinterpret_cast<void**>(owner))
         return nullptr;
+    // Teleport/UI teardown may already have retired this widget. Preserve the
+    // matching owner's cleanup even if ending the old edit state faults.
+    __try {
     if (g_findEditState[0x1988]) {
         if (g_findEditState[0x1989] && g_closeKeyboard) {
             g_closeKeyboard(*reinterpret_cast<void**>(g_findEditState),
@@ -901,6 +913,7 @@ uint8_t* EndFieldEdit()
         }
         g_findEditState[0x1988] = 0;
     }
+    } __except(EXCEPTION_EXECUTE_HANDLER){Log("dialog: native field retired during transition; releasing its owned input");}
     return owner;
 }
 }
@@ -1005,7 +1018,7 @@ namespace {
 // A scroll bar right of the list when it holds more than it shows: a dim track and a gold thumb
 // (FbUiPrimitives roundedBoxSmall), drawn with the button row's widget (images take absolute
 // rects and are not clipped to their widget).
-constexpr size_t kAssetRoundedBox = 0xd250 + 0x180;
+constexpr size_t kAssetRoundedBox = 0xd3d0 + 0x180;
 // Bars behind the selected line (gold) and the line under the mouse (faint), over the width
 // of the lines (the area between field and buttons, split evenly between the shown lines).
 // Nine-slice boxes take their transparency from the colour's alpha byte (0xAABBGGRR); the float
