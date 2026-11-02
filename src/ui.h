@@ -71,6 +71,7 @@ void ReleaseDialogInput();
 // Ends the field's edit for this frame (no caret, typing goes nowhere); call after DrawDialog.
 void DisableDialogField();
 void RecoverDialogInput();
+int TextInputFlag();
 // The text typed so far.
 const char* DialogText(Dialog* d, size_t* len);
 // Replaces the text in the field.

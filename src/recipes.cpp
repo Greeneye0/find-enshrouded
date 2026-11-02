@@ -33,6 +33,7 @@ std::unordered_map<uint32_t, std::vector<uint32_t>> g_madeBy; // item -> worksho
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_makes;  // workshop -> items
 std::unordered_map<uint64_t, std::vector<uint32_t>> g_recipeIds; // workshop << 32 | item -> recipes
 std::unordered_set<uint32_t> g_allRecipeIds;
+std::vector<uint32_t> g_allOutputs; // every recipe's output items, also your own crafting menu's
 bool g_loaded = false;
 
 struct Span {
@@ -87,6 +88,12 @@ int TakeRegistry(const Span& s, const uint8_t* header)
         const uint8_t* r = records + i * kRecipeSize;
         uint32_t workshop = *reinterpret_cast<const uint32_t*>(r + kWorkshop);
         g_allRecipeIds.insert(*reinterpret_cast<const uint32_t*>(r + kRecipeId));
+        {
+            uint32_t n;
+            const uint8_t* out = Array(s, r + kOutputs, kStackSize, n);
+            for (uint32_t o = 0; out && o < n; ++o)
+                g_allOutputs.push_back(*reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem));
+        }
         if (!workshop)
             continue;
         uint32_t recipeId = *reinterpret_cast<const uint32_t*>(r + kRecipeId);
@@ -176,6 +183,8 @@ const std::vector<uint32_t>* Makes(uint32_t workshop)
 }
 
 bool IsWorkshop(uint32_t workshop) { return g_makes.count(workshop) != 0; }
+
+const std::vector<uint32_t>& AllOutputs() { return g_allOutputs; }
 
 bool IsRecipe(uint32_t id) { return g_allRecipeIds.count(id) != 0; }
 

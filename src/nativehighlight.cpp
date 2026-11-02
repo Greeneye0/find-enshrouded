@@ -449,7 +449,7 @@ bool HookNext(uint8_t* next)
 }
 
 bool Init() {
-    auto next = FindUnique("40 57 48 83 EC 20 4C 8B 01 48 8B FA 8B 41 08 4C 8B C9 49 3B 80 30 08 00 00");
+    auto next = FindUnique("40 57 48 83 EC 20 4C 8B 01 48 8B FA 8B 41 08 4C 8B C9 49 3B 80 ?? 08 00 00");
     auto setter = FindUnique("48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 41 56 48 83 EC 20 33 DB 4D 8B F0 48 8B FA 48 8B F1 48 39 5A 08 76 46 66 66 0F 1F 84 00 00 00 00 00 48 8B 07 41 B0 01 48 8B CE 8B 14 98 E8 ?? ?? ?? ?? 48 85 C0 74 1D 49 8B 0E 0F B6 14 0B 38 50 78");
     auto instance = FindUnique("85 D2 74 29 48 8B 81 C8 01 00 00 44 8B C2 41 81 E0 FF FF FF 00 C1 EA 18");
     auto color = FindUnique("40 53 48 83 EC 70 F3 0F 10 05 ?? ?? ?? ?? 48 8B D9 0F 29 74 24 60 0F 29 7C 24 50");
@@ -468,7 +468,7 @@ bool Init() {
     g_transform=reinterpret_cast<TransformFn>(FindUnique("48 8B C4 44 88 48 20 4C 89 40 18 55"));
     g_delete=reinterpret_cast<DeleteFn>(FindUnique("48 89 6C 24 20 57 41 54 41 56 48 83 EC 30"));
     g_bind=reinterpret_cast<BindFn>(FindUnique("48 89 5C 24 18 48 89 6C 24 20 56 41 54 41 57 48 83 EC 20 45 33 E4"));
-    g_upload=reinterpret_cast<UploadFn>(FindUnique("48 8B C4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 98 48 81 EC 68 01 00 00 4C 8B 71 18"));
+    g_upload=reinterpret_cast<UploadFn>(FindUnique("48 8B C4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 88 48 81 EC 78 01 00 00 4C 8B 71 18"));
     if (!g_create || !g_transform || !g_delete || !g_bind || !g_upload) return false;
     g_set = reinterpret_cast<SetFn>(setter);
     g_instance = reinterpret_cast<InstanceFn>(instance);

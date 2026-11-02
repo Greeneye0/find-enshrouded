@@ -1,0 +1,2 @@
+Updated for the 2 November 2026 game patch (game build 1283531). Find 1.2.4 did not recognise the patched game and switched itself off ("inactive" in find.log), so Shift+F did nothing.
+Things placed in your base are found too: searching "oven" lights up the ovens standing in the base, not only the Farmer who makes them. Stations, beds, torches and the like that no chest holds are suggested as "placed here" (with how many, if more than one).

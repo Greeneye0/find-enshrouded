@@ -28,7 +28,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Perk"), T("Item type"), T("Chest"), T("Instruments"), T("Fishing Rods"), T("Animal Food"), T("Weapon Gems"),
      T("This base has no storage chests to search."),
      T("can be made here"),
-     T("made here, not unlocked yet")},
+     T("made here, not unlocked yet"),
+     T("placed here")},
     // De
     {T("Suchen"), T("Gegenstand, Truhenname oder Art eingeben: Kategorie, Seltenheit, Perk."),
      T("Stell dich in eine deiner Basen, um ihre Truhen zu durchsuchen."),
@@ -37,7 +38,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Instrumente"), T("Angeln"), T("Tierfutter"), T("Waffenedelsteine"),
      T("Diese Basis hat keine Truhen zum Durchsuchen."),
      T("kann hier hergestellt werden"),
-     T("wird hier hergestellt, noch nicht freigeschaltet")},
+     T("wird hier hergestellt, noch nicht freigeschaltet"),
+     T("hier aufgestellt")},
     // Fr
     {T("Chercher"), T("Saisissez un objet, un nom de coffre ou un type : catégorie, rareté, atout."),
      T("Placez-vous dans l'une de vos bases pour fouiller ses coffres."),
@@ -46,7 +48,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Instruments"), T("Cannes à pêche"), T("Nourriture animale"), T("Gemmes d'arme"),
      T("Cette base n'a aucun coffre à fouiller."),
      T("fabricable ici"),
-     T("fabriqué ici, pas encore débloqué")},
+     T("fabriqué ici, pas encore débloqué"),
+     T("placé ici")},
     // Es
     {T("Buscar"), T("Escribe un objeto, el nombre de un cofre o un tipo: categoría, rareza, ventaja."),
      T("Colócate dentro de una de tus bases para buscar en sus cofres."),
@@ -55,7 +58,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Instrumentos"), T("Cañas de pescar"), T("Comida para animales"), T("Gemas de arma"),
      T("Esta base no tiene cofres en los que buscar."),
      T("se puede fabricar aquí"),
-     T("se fabrica aquí, aún no desbloqueado")},
+     T("se fabrica aquí, aún no desbloqueado"),
+     T("colocado aquí")},
     // It
     {T("Cerca"), T("Scrivi un oggetto, il nome di una cassa o un tipo: categoria, rarità, vantaggio."),
      T("Mettiti dentro una delle tue basi per cercare nelle sue casse."),
@@ -64,7 +68,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Strumenti musicali"), T("Canne da pesca"), T("Cibo per animali"), T("Gemme per armi"),
      T("Questa base non ha casse in cui cercare."),
      T("si può fabbricare qui"),
-     T("si fabbrica qui, non ancora sbloccato")},
+     T("si fabbrica qui, non ancora sbloccato"),
+     T("piazzato qui")},
     // Pt
     {T("Buscar"), T("Digite um item, o nome de um baú ou um tipo: categoria, raridade, vantagem."),
      T("Fique dentro de uma das suas bases para procurar nos baús dela."),
@@ -73,7 +78,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Instrumentos"), T("Varas de pesca"), T("Comida de animais"), T("Gemas de arma"),
      T("Esta base não tem baús onde procurar."),
      T("pode ser fabricado aqui"),
-     T("fabricado aqui, ainda não desbloqueado")},
+     T("fabricado aqui, ainda não desbloqueado"),
+     T("colocado aqui")},
     // Pl
     {T("Szukaj"), T("Wpisz przedmiot, nazwę skrzyni lub rodzaj: kategoria, rzadkość, atut."),
      T("Stań w jednej ze swoich baz, aby przeszukać jej skrzynie."),
@@ -82,7 +88,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Instrumenty"), T("Wędki"), T("Karma dla zwierząt"), T("Klejnoty do broni"),
      T("Ta baza nie ma skrzyń do przeszukania."),
      T("można tu wytworzyć"),
-     T("wytwarzane tutaj, jeszcze nie odblokowane")},
+     T("wytwarzane tutaj, jeszcze nie odblokowane"),
+     T("postawione tutaj")},
     // Ru
     {T("Найти"), T("Введите предмет, название сундука или вид: категория, редкость, перк."),
      T("Встаньте в одной из своих баз, чтобы искать в её сундуках."),
@@ -91,7 +98,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Инструменты"), T("Удочки"), T("Корм для животных"), T("Самоцветы для оружия"),
      T("В этой базе нет сундуков для поиска."),
      T("можно изготовить здесь"),
-     T("изготавливается здесь, ещё не открыто")},
+     T("изготавливается здесь, ещё не открыто"),
+     T("установлено здесь")},
     // Uk
     {T("Знайти"), T("Введіть предмет, назву скрині або вид: категорія, рідкісність, перк."),
      T("Станьте в одній зі своїх баз, щоб шукати в її скринях."),
@@ -100,7 +108,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Інструменти"), T("Вудки"), T("Корм для тварин"), T("Самоцвіти для зброї"),
      T("У цій базі немає скринь для пошуку."),
      T("можна виготовити тут"),
-     T("виготовляється тут, ще не відкрито")},
+     T("виготовляється тут, ще не відкрито"),
+     T("встановлено тут")},
     // Ja
     {T("検索"), T("アイテム名、チェスト名、または種類（カテゴリー・レア度・パーク）を入力してください。"),
      T("拠点の中に立つと、その拠点のチェストを検索できます。"), T("この拠点には「%s」に一致するものがありません。"),
@@ -109,7 +118,8 @@ const char* const kTexts[LangCount][Count] = {
      T("武器用ジェム"),
      T("この拠点には検索できるチェストがありません。"),
      T("ここで作れます"),
-     T("ここで作れます（まだ未解放）")},
+     T("ここで作れます（まだ未解放）"),
+     T("ここに設置済み")},
     // Ko
     {T("찾기"), T("아이템, 상자 이름 또는 종류(카테고리, 등급, 특성)를 입력하세요."),
      T("자신의 기지 안에 서야 그 기지의 상자를 검색할 수 있습니다."), T("이 기지에는 \"%s\"와(과) 일치하는 것이 없습니다."),
@@ -117,14 +127,16 @@ const char* const kTexts[LangCount][Count] = {
      T("특성"), T("아이템 종류"), T("상자"), T("악기"), T("낚싯대"), T("동물 먹이"), T("무기 보석"),
      T("이 기지에는 검색할 상자가 없습니다."),
      T("여기서 제작 가능"),
-     T("여기서 제작 가능 (아직 잠김)")},
+     T("여기서 제작 가능 (아직 잠김)"),
+     T("여기에 설치됨")},
     // Zh
     {T("查找"), T("输入物品、箱子名称或类别：分类、稀有度、特性。"), T("站在你的某个基地内才能搜索其箱子。"),
      T("此基地中没有与“%s”匹配的内容。"), T("Tab / Shift+Tab  选择     点击  选择     Enter  查找"), T("Enter / Esc  关闭"),
      T("分类"), T("稀有度"), T("特性"), T("物品类型"), T("箱子"), T("乐器"), T("钓竿"), T("动物饲料"), T("武器宝石"),
      T("此基地中没有可搜索的箱子。"),
      T("可在此制作"),
-     T("可在此制作（尚未解锁）")},
+     T("可在此制作（尚未解锁）"),
+     T("已放置在此")},
     // Tr
     {T("Bul"), T("Bir eşya, sandık adı ya da tür yazın: kategori, nadirlik, yetenek."),
      T("Sandıklarını aramak için üslerinden birinin içinde dur."), T("Bu üste \"%s\" ile eşleşen bir şey yok."),
@@ -132,7 +144,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Yetenek"), T("Eşya türü"), T("Sandık"), T("Enstrümanlar"), T("Oltalar"), T("Hayvan yemi"), T("Silah taşları"),
      T("Bu üste aranacak sandık yok."),
      T("burada üretilebilir"),
-     T("burada üretilir, henüz açılmadı")},
+     T("burada üretilir, henüz açılmadı"),
+     T("burada yerleştirilmiş")},
 };
 
 // Plural forms: 0 one, 1 few, 2 many (en-like languages use 0 and 2).
@@ -244,6 +257,14 @@ std::string KindCount(uint32_t items, int chests)
     else
         _snprintf_s(buf, _TRUNCATE, "%s %s", what, where);
     return buf;
+}
+
+std::string PlacedCount(int count)
+{
+    std::string text = Get(PlacedHere);
+    if (count > 1)
+        text += " (" + std::to_string(count) + ")";
+    return text;
 }
 
 void Detect()

@@ -7,11 +7,11 @@
 //           the game's own UI.
 // 140c32210 the HUD's waypoint marker, inside the spatial elements window; chest glows are
 //           drawn right after it, in the same window.
-// 140845600 UiCommandLoop(app): every frame; the game client = *(*(app + 0x35280) + 0x1b8)
+// 140845600 UiCommandLoop(app): every frame; the game client = *(*(app + 0x352a0) + 0x1b8)
 //           (a different object than the UI's client at *(**(G + 0xd0) + 0x38)). Quick
 //           Deposit hooks it too: found by the code after its first 13 bytes, chained.
-// Base and chests as in Quick Deposit: client + 0x47d4e0 world; world + 0x2c08 player
-// position (int64, 32 fraction bits); world + 0x3eb8 base registry {+0x24 count, +0x30 bases
+// Base and chests as in Quick Deposit: client + 0x47d4e0 world; world + 0x2c18 player
+// position (int64, 32 fraction bits); world + 0x3ec8 base registry {+0x24 count, +0x30 bases
 // of 0x130: +0x00 magic chest ids, +0x08 count, +0xf0 min, +0x100 max}.
 // Item names: ItemInfo + 0x48 is the localized name's key.
 // 140852760 UiDispatch(gameClient, cmd): command 0x01 <screen> opens a HUD screen; the screen
@@ -64,9 +64,9 @@ void* volatile g_app = nullptr;
 
 constexpr size_t kClientWorld = 0x47d4e0;
 constexpr size_t kClientPlayer = 0x466b44;
-constexpr size_t kWorldPlayerPos = 0x2c08;
-constexpr size_t kWorldPermissions = 0x2c58;
-constexpr size_t kWorldBases = 0x3eb8;
+constexpr size_t kWorldPlayerPos = 0x2c18;
+constexpr size_t kWorldPermissions = 0x2c68;
+constexpr size_t kWorldBases = 0x3ec8;
 constexpr size_t kRegPermissions = 0x10;
 constexpr size_t kRegBaseCount = 0x24;
 constexpr size_t kRegBases = 0x30;
@@ -91,6 +91,7 @@ constexpr float kLeftMeters = 120.0f;                // farther than this: you l
 constexpr ULONGLONG kMinGlowMs = 2000;               // chests right next to you still show for a moment
 constexpr ULONGLONG kFadeOutMs = 600;
 constexpr float kChestCentre = 0.5f; // chest origin is at its bottom; chests stack 1 m apart
+constexpr size_t kItemPlacedEntity = 0x104 + 0x2bc; // ItemInfo: equipment.placedEntity, a TemplateReference (GUID first)
 constexpr size_t kItemIcon = 0x56c;   // ItemInfo: iconImage, a 16-byte UiImageReference
 constexpr uint8_t kCmdOpenScreen = 0x01;
 constexpr size_t kUiScreen = 0x1cd8;  // UI client: the HUD screen shown
@@ -120,7 +121,7 @@ void* GameClient()
     void* app = g_app;
     if (!app)
         return nullptr;
-    void* ui = At<void*>(app, 0x35280);
+    void* ui = At<void*>(app, 0x352a0);
     return ui ? At<void*>(ui, 0x1b8) : nullptr;
 }
 
@@ -157,6 +158,7 @@ struct Entry {
     std::vector<uint32_t> chests;
     std::vector<uint32_t> crafters; // Item: NPCs and stations of the base that make it
     bool locked = false;            // Item: none of them can make it yet (recipe not unlocked)
+    std::vector<uint32_t> placed;   // Item: where it stands in the base (a station, bed, torch...)
     uint32_t kinds = 0; // Group: how many different items
     std::vector<uint32_t> items; // Group: those items
     uint8_t group = 0;           // Group: what kind (GroupCategory...)
@@ -430,12 +432,12 @@ std::string SearchName(uint32_t itemId)
 enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType };
 
 // Category and rarity names as the game shows them, in its language. The UI texts
-// (*(G + 200)): + 0x10 FbUiLocaLinks; its crafting texts (+ 0xb030) hold the item categories at
+// (*(G + 200)): + 0x10 FbUiLocaLinks; its crafting texts (+ 0xb1b0) hold the item categories at
 // + 0xe0 (FbUiLocaCraftingCategories: equipment + 0x20, weapons + 0x30, tools + 0x40,
 // buildTools + 0x50, consumables + 0xa0, ammunition + 0xb0, materials + 0xd0, blueprints + 0xe0,
 // currency + 0x110, collectible + 0x120, petFood + 0x130); its RPG terms (+ 0x40) hold the
 // rarities at + 0x1d90 (common, uncommon, rare, epic, legendary; 0x10 apart).
-constexpr size_t kLocaCategories = 0x10 + 0xb030 + 0xe0;
+constexpr size_t kLocaCategories = 0x10 + 0xb1b0 + 0xe0;
 constexpr size_t kLocaRarities = 0x10 + 0x40 + 0x1d90;
 
 std::string CategoryLabel(uint8_t category)
@@ -609,6 +611,52 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
         ix.entries[entry].locked = knows && !can;
 }
 
+// What stands in the base lights up for its own name: searching "oven" finds the ovens placed
+// there, not only the Farmer who makes them. Each placed entity is matched to the item that
+// places its template.
+constexpr int kMaxPlaced = 4096;
+void AddPlaced(Index& ix, std::map<uint32_t, size_t>& byItem)
+{
+    if (!recipes::Loaded())
+        return;
+    static std::map<std::string, uint32_t> byTemplate; // template GUID -> item; the same all session
+    if (byTemplate.empty()) {
+        for (uint32_t item : recipes::AllOutputs()) {
+            const uint8_t* info = inv::ItemInfo(item);
+            if (!info)
+                continue;
+            uint8_t guid[16];
+            hot::Read(info + kItemPlacedEntity, guid, sizeof(guid));
+            static const uint8_t kNone[16] = {};
+            if (memcmp(guid, kNone, sizeof(guid)) != 0)
+                byTemplate.emplace(std::string(reinterpret_cast<char*>(guid), 16), item);
+        }
+        Log("placed: %zu items place something", byTemplate.size());
+    }
+    std::vector<inv::Placed> placed(kMaxPlaced);
+    int n = inv::FindPlaced(g_baseLo, g_baseHi, placed.data(), kMaxPlaced);
+    int matched = 0;
+    for (int i = 0; i < n; ++i) {
+        auto t = byTemplate.find(std::string(reinterpret_cast<char*>(placed[i].guid), 16));
+        if (t == byTemplate.end())
+            continue;
+        uint32_t item = t->second;
+        auto it = byItem.find(item);
+        if (it == byItem.end()) {
+            std::string name = SearchName(item);
+            it = byItem.emplace(item, ix.entries.size()).first;
+            ix.entries.push_back({name, MatchText(item, name), Kind::Item, item, 0, {}});
+        }
+        float p[3];
+        if (!inv::Position(placed[i].entity, p))
+            continue;
+        ix.positions[placed[i].entity] = {p[0], p[1], p[2]};
+        ix.entries[it->second].placed.push_back(placed[i].entity);
+        ++matched;
+    }
+    Log("placed: %d of %d things in the base are known items", matched, n);
+}
+
 // Every item and named chest of the base, built when the search opens.
 Index BuildIndex()
 {
@@ -698,6 +746,8 @@ Index BuildIndex()
     }
     g_step = "crafters";
     AddCrafters(ix, byItem);
+    g_step = "placed";
+    AddPlaced(ix, byItem);
     return ix;
 }
 
@@ -781,6 +831,8 @@ std::string Describe(const Entry& e)
                                                        : strings::KindCategory;
         return std::string(strings::Get(label)) + ": " + name + kDash + strings::KindCount(e.kinds, n);
     }
+    if (!n && !e.placed.empty())
+        return name + kDash + strings::PlacedCount(static_cast<int>(e.placed.size()));
     if (!n && !e.crafters.empty())
         return name + kDash + strings::Get(e.locked ? strings::MadeHereLocked : strings::MadeHere);
     return name + kDash + strings::ItemCount(e.total, n);
@@ -1021,6 +1073,19 @@ void StartGlows(const std::vector<uint32_t>& chests)
     nativehighlight::Clear();
 }
 
+#ifdef FIND_DEV
+// Copies n bytes from memory that may not be readable.
+bool DevCopy(void* to, const void* from, size_t n)
+{
+    __try {
+        memcpy(to, from, n);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+#endif
+
 // Returns true when chests were found (the dialog closes), false to keep it open.
 bool Search(const std::string& text, bool picked = false)
 {
@@ -1130,6 +1195,49 @@ bool Search(const std::string& text, bool picked = false)
         }
         return false;
     }
+    if (q.rfind("@dev-placed ", 0) == 0) {
+        // Where a placed entity names the item it was built from: "@dev-placed 25" looks in the
+        // record (and 0x100 bytes behind each pointer in it) of every entity within 25 m for the
+        // placed-entity template GUID (ItemInfo + 0x3c0) of an item a recipe makes.
+        std::map<std::string, uint32_t> byGuid;
+        for (uint32_t item : recipes::AllOutputs()) {
+            const uint8_t* info = inv::ItemInfo(item);
+            uint8_t g[16];
+            if (info && DevCopy(g, info + 0x3c0, 16) && (g[0] | g[4] | g[8] | g[12] | g[15]))
+                byGuid[std::string(reinterpret_cast<char*>(g), 16)] = item;
+        }
+        float at[3], dist[512];
+        uint32_t ids[512];
+        void* reg = inv::InspectRegistry(0);
+        int n = PlayerPosition(at) ? inv::EntitiesNear(reg, at, static_cast<float>(atof(q.c_str() + 12)), ids, dist, 512) : 0;
+        int logged = 0;
+        for (int i = 0; i < n && logged < 60; ++i) {
+            uint8_t* rec = inv::Record(reg, ids[i]);
+            uint8_t head[0x80];
+            if (!rec || !DevCopy(head, rec, sizeof(head)))
+                continue;
+            auto check = [&](const uint8_t* bytes, size_t len, size_t recOff, int behind) {
+                for (size_t o = 0; o + 16 <= len; o += 4) {
+                    auto it = byGuid.find(std::string(reinterpret_cast<const char*>(bytes + o), 16));
+                    if (it != byGuid.end() && logged < 60) {
+                        ++logged;
+                        DevLog("dev placed %u (%.1f m): record +0x%zx%s +0x%zx = %s", ids[i], dist[i], recOff,
+                               behind ? " ->" : "", o, SearchName(it->second).c_str());
+                    }
+                }
+            };
+            check(head, sizeof(head), 0, 0);
+            for (size_t k = 0; k < sizeof(head); k += 8) {
+                uint64_t ptr;
+                memcpy(&ptr, head + k, 8);
+                uint8_t behind[0x100];
+                if (ptr > 0x10000 && ptr < 0x7fffffffffff && !(ptr & 7) && DevCopy(behind, reinterpret_cast<void*>(ptr), sizeof(behind)))
+                    check(behind, sizeof(behind), k, 1);
+            }
+        }
+        Log("dev placed: %d entities, %zu placeable items, %d matches", n, byGuid.size(), logged);
+        return false;
+    }
     if (q.rfind("@dev-item ", 0) == 0) {
         // Where an item's ItemInfo lives: "@dev-item 3244772462"
         uint32_t id = static_cast<uint32_t>(strtoul(q.c_str() + 10, nullptr, 10));
@@ -1193,6 +1301,7 @@ bool Search(const std::string& text, bool picked = false)
     nativehighlight::SetStressTest(false);
     std::vector<uint32_t> chests;
     std::vector<uint32_t> crafters; // NPCs and stations that make what matched
+    std::vector<uint32_t> placed;   // what matched, standing in the base
     std::vector<uint32_t> items;
     std::string matched; // for the log
     int locked = 0;      // matched items whose crafters can't make them yet
@@ -1205,6 +1314,9 @@ bool Search(const std::string& text, bool picked = false)
         for (uint32_t c : e.crafters)
             if (std::find(crafters.begin(), crafters.end(), c) == crafters.end())
                 crafters.push_back(c);
+        for (uint32_t c : e.placed)
+            if (std::find(placed.begin(), placed.end(), c) == placed.end())
+                placed.push_back(c);
         if (e.kind == Kind::Item)
             items.push_back(e.itemId);
         for (uint32_t id : e.items)
@@ -1228,12 +1340,12 @@ bool Search(const std::string& text, bool picked = false)
             if (r >= 0 && r <= 2)
                 add(e);
         }
-        if (chests.empty() && crafters.empty())
+        if (chests.empty() && crafters.empty() && placed.empty())
             for (const Entry& e : g_index.entries)
                 if (e.lower.find(q) != std::string::npos)
                     add(e);
     }
-    if (chests.empty() && crafters.empty()) {
+    if (chests.empty() && crafters.empty() && placed.empty()) {
         g_notice = Format(strings::NoMatch, Trim(text));
         Log("find '%s': nothing in %d chests", q.c_str(), g_index.chestCount);
 #ifdef FIND_DEV
@@ -1243,6 +1355,9 @@ bool Search(const std::string& text, bool picked = false)
         return false;
     }
     int chestsLit = static_cast<int>(chests.size());
+    for (uint32_t c : placed)
+        if (std::find(chests.begin(), chests.end(), c) == chests.end())
+            chests.push_back(c);
     for (uint32_t c : crafters)
         if (std::find(chests.begin(), chests.end(), c) == chests.end())
             chests.push_back(c);
@@ -1257,8 +1372,9 @@ bool Search(const std::string& text, bool picked = false)
         DevLog("  glowing:%s", ids.c_str());
     }
 #endif
-    Log("find '%s': %d of %d chests glow, %d items light up in them, %d NPCs and stations make them (%d not unlocked)%s",
-        q.c_str(), chestsLit, g_index.chestCount, static_cast<int>(items.size()), static_cast<int>(crafters.size()), locked,
+    Log("find '%s': %d of %d chests glow, %d items light up in them, %d placed in the base, %d NPCs and stations make them (%d not unlocked)%s",
+        q.c_str(), chestsLit, g_index.chestCount, static_cast<int>(items.size()), static_cast<int>(placed.size()),
+        static_cast<int>(crafters.size()), locked,
         g_nativeReady ? "" : " (no chest outline: see above)");
     return true;
 }
@@ -1349,9 +1465,9 @@ void Tick()
     ReleaseSRWLockExclusive(&g_requestLock);
     if (pending) {
         if (!strcmp(request, "@dev-input-state") || !strcmp(request, "@dev-recover-ui")) {
-            Log("input diagnostic: screen=%d search=%d openedScreen=%d camera=%p wheel=%p escape=%d",
+            Log("input diagnostic: screen=%d search=%d openedScreen=%d camera=%p wheel=%p escape=%d typing=%d",
                 Screen(), g_open, g_openedInventory, g_lockedWindow, g_wheelWindow,
-                (GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0);
+                (GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0, ui::TextInputFlag());
             if (!strcmp(request, "@dev-recover-ui")) {
                 // Explicit bridge recovery only; never an automatic Escape override.
                 if (Screen() == kScreenPlaying || Screen() == kScreenInventory || Screen() == 10) ui::RecoverDialogInput();
@@ -1862,7 +1978,7 @@ bool Init(const Config& config)
             playState = after - 18;
     }
     uint8_t* spatial = FindUnique("48 89 54 24 10 55 57 41 56 48 8D AC 24 00 FE FF FF");
-    uint8_t* loop = FindUnique("48 81 EC 98 00 00 00 48 8D 81 58 4F 03 00");
+    uint8_t* loop = FindUnique("48 81 EC 98 00 00 00 48 8D 81 78 4F 03 00");
     if (!playState || !spatial || !loop) {
         Log("signatures: play state %p, markers %p, command loop %p", playState, spatial, loop);
         return false;

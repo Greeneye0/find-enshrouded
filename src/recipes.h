@@ -19,6 +19,9 @@ const std::vector<uint32_t>* Makes(uint32_t workshop);
 
 bool IsWorkshop(uint32_t workshop);
 
+// Every item a recipe makes (with repeats), your own crafting menu's too.
+const std::vector<uint32_t>& AllOutputs();
+
 // Any recipe's id (also those of your own crafting menu).
 bool IsRecipe(uint32_t id);
 

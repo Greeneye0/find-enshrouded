@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.4
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.5
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -96,7 +96,7 @@ GOOD TO KNOW
   own dbgcore.dll.
 - Works next to other mods. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
   hooks the same game function, Find chains onto its hook instead of replacing it.
-- Made for the current game version (build 1273043). After a game update the mod checks
+- Made for the current game version (build 1283531). After a game update the mod checks
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
 - If something goes wrong, greeneye\find\find.log says what the mod did and
@@ -105,6 +105,14 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.5
+- Updated for the 2 November 2026 game patch (game build 1283531). Find 1.2.4 did not
+  recognise the patched game and switched itself off ("inactive" in find.log), so Shift+F
+  did nothing.
+- Things placed in your base are found too: searching "oven" lights up the ovens standing
+  in the base, not only the Farmer who makes them. Stations, beds, torches and the like
+  that no chest holds are suggested as "placed here" (with how many, if more than one).
+
 1.2.4
 - The hotkey opens the search every time, also from a programmable keypad or mouse macro:
   Find caught it only while it was held, so a very short press was often missed.

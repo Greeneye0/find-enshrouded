@@ -112,6 +112,9 @@ int Registries(void** out, int max);
 // Component type indices of an entity (-1: unknown entity).
 int Types(void* registry, uint32_t entity, uint16_t* out, int max);
 
+// The entity's record in the registry (component bits at + 0x18), or null.
+uint8_t* Record(void* registry, uint32_t entity);
+
 // Raw component data, or null.
 void* Data(void* registry, uint16_t type, uint32_t entity);
 
@@ -127,6 +130,16 @@ struct Crafter {
     uint32_t workshop;
 };
 int FindCrafters(const float lo[3], const float hi[3], bool (*isWorkshop)(uint32_t), Crafter* out, int max);
+
+// Everything placed inside the box (stations, beds, torches, chests...) with the GUID of the
+// template it was made from: entity record + 0x28 points at the template, its GUID first. An
+// item names the template it places (ItemInfo + 0x3c0), so the two together say which item
+// was placed. Returns how many were written.
+struct Placed {
+    uint32_t entity;
+    uint8_t guid[16];
+};
+int FindPlaced(const float lo[3], const float hi[3], Placed* out, int max);
 
 #ifdef FIND_DEV
 struct Hit { uint32_t entity; uint16_t type; uint16_t offset; };

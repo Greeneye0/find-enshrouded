@@ -600,6 +600,36 @@ int FindStations(const float lo[3], const float hi[3], const uint32_t* chests, i
     return n;
 }
 
+int FindPlaced(const float lo[3], const float hi[3], Placed* out, int max)
+{
+    if (!g_registry || max <= 0)
+        return 0;
+    const uint16_t need[] = {kTypePosition};
+    std::vector<uint32_t> ids(8192);
+    int scanned = 0;
+    int n = WalkEntities(g_registry, need, 1, lo, hi, ids.data(), static_cast<int>(ids.size()), scanned);
+    auto templateOf = [](uint8_t* rec, uint8_t* guid) -> bool {
+        __try {
+            auto* from = *reinterpret_cast<uint8_t**>(rec + 0x28);
+            if (!from)
+                return false;
+            memcpy(guid, from, 16);
+            return true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+    };
+    int found = 0;
+    for (int i = 0; i < n && found < max; ++i) {
+        uint8_t* rec = Record(g_registry, ids[i]);
+        if (rec && templateOf(rec, out[found].guid)) {
+            out[found].entity = ids[i];
+            ++found;
+        }
+    }
+    return found;
+}
+
 int FindCrafters(const float lo[3], const float hi[3], bool (*isWorkshop)(uint32_t), Crafter* out, int max)
 {
     if (!g_registry || !isWorkshop || max <= 0)
@@ -955,6 +985,20 @@ int Registries(void** out, int max)
 int Types(void* registry, uint32_t entity, uint16_t* out, int max)
 {
     return registry ? EntityTypes(registry, entity, out, max) : -1;
+}
+
+uint8_t* Record(void* registry, uint32_t entity)
+{
+    if (!registry)
+        return nullptr;
+    uint8_t desc[0x40] = {};
+    *reinterpret_cast<void**>(desc + 0x30) = registry;
+    void* iter[2] = {desc, nullptr};
+    __try {
+        return getEntity(iter, entity);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
 }
 
 void* Data(void* registry, uint16_t type, uint32_t entity)

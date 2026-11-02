@@ -9,8 +9,8 @@
 //   140a43f80 Project(G, &out{x, y, ..}, client + 0x1d20 view, client + 0x1d60 projection,
 //             &worldPos, &clamp{4 floats, u8 enabled at +0x10}) -> in front of the camera
 //   a child widget (140a2e6c0 Begin, handle at +8) placed at the point, holding a 32x32 child
-//   centred on it that draws three images: fill (assets + 0xb968, colour assets + 0xe2c8),
-//   outline (+0xb978, 0xcd000000) and the marker icon (+0xb988, white).
+//   centred on it that draws three images: fill (assets + 0xbae8, colour assets + 0xe448),
+//   outline (+0xbaf8, 0xcd000000) and the marker icon (+0xbb08, white).
 //   Widget handle: +0x70 packed position (x, y floats), size via 1411b1050, rect at +0x114.
 //   Image handle: 140a3d3c0(140a3c2c0(), &tmp, &ref); drawn by 140a3a6c0(widget, rect,
 //   &image, &colour{u32, float}).
@@ -25,7 +25,7 @@
 //   button: +0x04 0x10202 (+0x07 set when clicked), +0x08 0x100, +0x10 3, +0x4c 10.0,
 //   +0x50 5.0, +0x54 1.0, +0x58 1, +0x78 label text.
 //   The field (140b12120) keeps what is typed in its own edit state, looked up every frame by
-//   140af9040 FieldState(field, 0x64d2790860d9c7f6, 1) (0x1990 bytes); the state takes the
+//   140af9040 FieldState(field, 0x397c0808484b9ef3, 1) (0x1990 bytes); the state takes the
 //   desc's text only when it is created. 1411b0370 SetEditText(&result, state + 0x10, &utf8)
 //   replaces the edited text and puts the cursor at its end; Find calls it while its own
 //   dialog draws, from the dialog's own "call FieldState"s (redirected), so FieldState's bytes
@@ -36,7 +36,7 @@
 //   below the buttons. EndWidget itself stays untouched: XHL's mod loader finds it by its bytes. Labels as the main menu draws its small texts:
 //   140b0c760 BeginLabel(label, text, style, 0) (label: +0x08 widget, whose +0x6c is the
 //   alignment; +0x3d 1; +0xb0 colour u32 + alpha float), 140b13f50 EndLabel(label); the small
-//   text style is assets + 0x10a0c.
+//   text style is assets + 0x10bbc.
 #include <windows.h>
 #include <intrin.h>
 #include <algorithm>
@@ -80,7 +80,7 @@ DialogInitFn g_dialogInit = nullptr;
 LocaTextFn g_locaText = nullptr;
 FieldStateFn g_originalFieldState = nullptr;
 SetEditTextFn g_setEditText = nullptr;
-constexpr uint64_t kTextFieldId = 0x64d2790860d9c7f6ull;
+constexpr uint64_t kTextFieldId = 0x397c0808484b9ef3ull; // 0x64d2790860d9c7f6 before the 2026-11-02 patch
 constexpr size_t kStateEdit = 0x10;
 using CloseKeyboardFn = void (*)(void*, uint32_t);
 CloseKeyboardFn g_closeKeyboard = nullptr;
@@ -91,19 +91,19 @@ EndWidgetFn g_originalEnd = nullptr;
 BeginLabelFn g_beginLabel = nullptr;
 EndLabelFn g_endLabel = nullptr;
 void* g_afterButtons = nullptr; // return address of the dialog's "end the button row" call
-constexpr size_t kAssetSmallText = 0x10a0c;
+constexpr size_t kAssetSmallText = 0x10bbc;
 constexpr uint32_t kHintColour = 0xffc8c8c8;
 constexpr float kHintAlpha = 0.6f;
 
-constexpr size_t kAssetMarkerFill = 0xb968;
-constexpr size_t kAssetMarkerOutline = 0xb978;
-constexpr size_t kAssetMarkerIcon = 0xb988;
-constexpr size_t kAssetMarkerFillColour = 0xe2c8;
+constexpr size_t kAssetMarkerFill = 0xbae8;
+constexpr size_t kAssetMarkerOutline = 0xbaf8;
+constexpr size_t kAssetMarkerIcon = 0xbb08;
+constexpr size_t kAssetMarkerFillColour = 0xe448;
 constexpr size_t kLocaCancel = 0x2110;
-// FbUiPrimitives (assets + 0xd250): circle +0x00, circleOutline +0x10, circleSoftGlow +0x20,
+// FbUiPrimitives (assets + 0xd3d0): circle +0x00, circleOutline +0x10, circleSoftGlow +0x20,
 // ringSoftGlow +0x30, triangle +0x50 (the menu arrow, 0xd2a0), gradients +0xa0.
-constexpr size_t kAssetSoftGlow = 0xd250 + 0x20;
-constexpr size_t kAssetRingGlow = 0xd250 + 0x30;
+constexpr size_t kAssetSoftGlow = 0xd3d0 + 0x20;
+constexpr size_t kAssetRingGlow = 0xd3d0 + 0x30;
 
 uint8_t* Assets()
 {
@@ -302,8 +302,8 @@ bool g_slotLit = false;             // ...and its highlight is drawn
 int g_slotCalls = 0, g_slotWanted = 0, g_slotDraws = 0; // diagnostics while lighting is on
 uint32_t g_slotSeen[8] = {};
 std::vector<uint32_t> g_slotIds; // diagnostics: distinct item ids the slots showed
-constexpr size_t kAssetBoxInnerGlow = 0xd250 + 0x120;
-constexpr size_t kAssetGlowBoxSmall = 0xd250 + 0x140;
+constexpr size_t kAssetBoxInnerGlow = 0xd3d0 + 0x120;
+constexpr size_t kAssetGlowBoxSmall = 0xd3d0 + 0x140;
 ImageFn g_originalImage = nullptr;
 DrawRealFn g_originalDrawReal = nullptr;
 std::vector<std::array<uint8_t, 16>> g_iconRefs; // the wanted items' icon references
@@ -925,6 +925,16 @@ void ReleaseDialogInput()
     g_pending.set = false;
 }
 
+// The shared edit-active flag as it is now (-1: unreadable); diagnostics only.
+int TextInputFlag()
+{
+    __try {
+        auto root = static_cast<uint8_t*>(G());
+        auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+        return owner && *reinterpret_cast<void**>(owner) ? owner[0x2fe70] : -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
+}
+
 // Explicit bridge recovery for an already abandoned field in the backpack.
 void RecoverDialogInput()
 {
@@ -977,13 +987,13 @@ void SetDialogTints(Dialog* d, const std::vector<uint32_t>& tints)
 
 uint32_t RarityColour(int rarity)
 {
-    // FbUiGlobalColors (assets + 0xd46c) starts with FbUiRarityColors: undefined, common,
+    // FbUiGlobalColors (assets + 0xd5ec) starts with FbUiRarityColors: undefined, common,
     // uncommon, rare, epic, legendary (UiColor, 8 bytes each; the first 4 the colour).
     uint8_t* assets = Assets();
     if (!assets || rarity < 0 || rarity > 4)
         return 0;
     uint32_t colour = 0;
-    hot::Read(assets + 0xd46c + 8 * (1 + rarity), &colour, sizeof(colour));
+    hot::Read(assets + 0xd5ec + 8 * (1 + rarity), &colour, sizeof(colour));
     return colour;
 }
 
@@ -1005,7 +1015,7 @@ namespace {
 // A scroll bar right of the list when it holds more than it shows: a dim track and a gold thumb
 // (FbUiPrimitives roundedBoxSmall), drawn with the button row's widget (images take absolute
 // rects and are not clipped to their widget).
-constexpr size_t kAssetRoundedBox = 0xd250 + 0x180;
+constexpr size_t kAssetRoundedBox = 0xd3d0 + 0x180;
 // Bars behind the selected line (gold) and the line under the mouse (faint), over the width
 // of the lines (the area between field and buttons, split evenly between the shown lines).
 // Nine-slice boxes take their transparency from the colour's alpha byte (0xAABBGGRR); the float

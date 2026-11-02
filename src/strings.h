@@ -25,6 +25,7 @@ enum Id {
     NoChests,       // inside a base without storage chests
     MadeHere,       // an item no chest holds that an NPC or station of the base makes
     MadeHereLocked, // the same, but the recipe isn't unlocked yet
+    PlacedHere,     // an item that stands in the base (a station, bed, torch...)
     Count
 };
 
@@ -33,6 +34,9 @@ const char* Get(Id id);
 // "996 in 1 chest", "12 items in 3 chests": counts with the right plural forms.
 std::string ItemCount(uint32_t amount, int chests);
 std::string KindCount(uint32_t items, int chests);
+
+// "placed here", with how many when more than one: "placed here (3)".
+std::string PlacedCount(int count);
 
 // Picks the language from the game's own "Cancel" text. Call once the UI texts are loaded.
 void Detect();
