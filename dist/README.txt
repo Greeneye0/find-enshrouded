@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.5
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.6
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -96,7 +96,7 @@ GOOD TO KNOW
   own dbgcore.dll.
 - Works next to other mods. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
   hooks the same game function, Find chains onto its hook instead of replacing it.
-- Made for the current game version (build 1283531). After a game update the mod checks
+- Made for the current game version (build 1285601). After a game update the mod checks
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
 - If something goes wrong, greeneye\find\find.log says what the mod did and
@@ -105,6 +105,19 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.6
+- Updated for the 3 November 2026 game patch (game build 1285601). The game's text box id
+  changed, so after a search the game stayed in typing mode: menus couldn't be backed out
+  of (for example after talking to an NPC), and search results couldn't be clicked. Find
+  now reads that id from the game itself, so a patch can't break this the same way again.
+- Chests glow through walls again: the smooth silhouette drawing was off after the patch.
+- A search closed in the same instant it opened no longer leaves the game on its hidden
+  screen with the HUD gone.
+- find.log no longer grows without end: at 10 MB it rolls over into find.old.log.
+Reported bugs fixed:
+- Stuck in menus after a search (reported by bigeasier and spirevipp).
+- No glow through walls, and search results couldn't be clicked (reported by Sh1On1).
+
 1.2.5
 - Updated for the 2 November 2026 game patch (game build 1283531). Find 1.2.4 did not
   recognise the patched game and switched itself off ("inactive" in find.log), so Shift+F

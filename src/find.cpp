@@ -1010,7 +1010,9 @@ void CloseSearch(const char* why)
     CatchWheel(false);
     int screen = Screen();
     // Escape on the screen behind the search also opens the system menu: close it again.
-    if (g_openedInventory && (screen == kScreenBehindSearch ||
+    // A search closed before its screen arrived: the command is on its way, and the empty screen
+    // would stay, hiding the HUD.
+    if (g_openedInventory && (!g_screenReached || screen == kScreenBehindSearch ||
                               (screen == kScreenSystemMenu && GetTickCount64() - g_escapeAt < 1000)))
         OpenScreen(kScreenPlaying);
     g_openedInventory = false;
@@ -1379,6 +1381,17 @@ bool Search(const std::string& text, bool picked = false)
     return true;
 }
 
+#ifdef FIND_DEV
+// The search dialog without keys, mouse or focus (FindDialogTest). Tick takes these on the game
+// thread; a click goes through the real hit test at the middle of the wanted line.
+struct DialogTestState {
+    bool open = false, setText = false, enter = false, cancel = false;
+    int screen = -1, typing = -1; // read in Tick: G is only set while the UI is being built
+    std::string text;
+    int clickLine = -1;
+} g_dialogTest;
+#endif
+
 bool Edge(int slot, bool down)
 {
     bool pressed = down && !g_navDown[slot];
@@ -1491,6 +1504,15 @@ void Tick()
     bool arrived = g_hotkeyArrived.exchange(false); // a press too short for the check above
     bool pressed = (down && !g_keyWasDown) || (arrived && focused);
     g_keyWasDown = down;
+#ifdef FIND_DEV
+    g_dialogTest.screen = Screen();
+    g_dialogTest.typing = ui::TextInputFlag();
+    if (g_dialogTest.open) {
+        g_dialogTest.open = false;
+        if (!g_open && (g_dialogTest.screen == kScreenPlaying || g_dialogTest.screen == kScreenInventory))
+            g_openPending = true;
+    }
+#endif
     // Only while playing or in the inventory: not while typing in chat (43), renaming (47), a
     // signpost (19) or any other screen, where Shift+F is just a capital F.
     if (pressed && !g_open) {
@@ -1543,6 +1565,12 @@ void Tick()
         }
         return;
     }
+#ifdef FIND_DEV
+    if (!g_open) {
+        g_dialogTest.setText = g_dialogTest.enter = g_dialogTest.cancel = false;
+        g_dialogTest.clickLine = -1;
+    }
+#endif
     if (!g_open)
         return;
 
@@ -1561,6 +1589,15 @@ void Tick()
     g_step = "dialog";
     // Let the native field process cancel/deactivate before retiring the dialog.
     int r = ui::DrawDialog(g_dialog);
+#ifdef FIND_DEV
+    if (g_dialogTest.cancel) r = 1;
+    if (g_dialogTest.enter) r = 2;
+    g_dialogTest.cancel = g_dialogTest.enter = false;
+    if (g_dialogTest.setText) {
+        g_dialogTest.setText = false;
+        ui::SetDialogText(g_dialog, g_dialogTest.text);
+    }
+#endif
     if (escapePressed || r == 1) {
         CloseSearch(escapePressed ? " (Escape)" : " (cancelled)");
         return;
@@ -1644,6 +1681,19 @@ void Tick()
         int line = ui::DialogLineAt(g_dialog, shown, mx, my);
         under = line >= 0 ? g_top + line : -1;
     }
+#ifdef FIND_DEV
+    if (g_dialogTest.clickLine >= 0) {
+        float area[4];
+        if (shown > 0 && g_notice.empty() && ui::DialogListArea(g_dialog, area))
+            for (float y = area[1]; y < area[1] + area[3]; y += 1.0f)
+                if (ui::DialogLineAt(g_dialog, shown, area[0] + area[2] / 2, y) == g_dialogTest.clickLine - g_top) {
+                    under = g_dialogTest.clickLine;
+                    click = true;
+                    break;
+                }
+        g_dialogTest.clickLine = -1;
+    }
+#endif
     if (under != g_hover) {
         g_hover = under;
         ShowMessage();
@@ -1946,6 +1996,43 @@ bool HotReady() {
 }
 void HotResume() { g_hotPaused = false; }
 
+#ifdef FIND_DEV
+// "state" | "open" | "text <text>" | "click <line>" | "enter" | "cancel". Writes the state as JSON;
+// requests apply on the next frame. Returns 0 if the command was not understood.
+int DialogTest(const char* cmd, char* out, int size)
+{
+    int ok = 1;
+    if (!strcmp(cmd, "open")) {
+        g_dialogTest.open = true;
+    } else if (!strncmp(cmd, "text ", 5)) {
+        g_dialogTest.text = cmd + 5;
+        g_dialogTest.setText = true;
+    } else if (!strncmp(cmd, "click ", 6)) {
+        g_dialogTest.clickLine = atoi(cmd + 6);
+    } else if (!strcmp(cmd, "enter")) {
+        g_dialogTest.enter = true;
+    } else if (!strcmp(cmd, "cancel")) {
+        g_dialogTest.cancel = true;
+    } else if (strcmp(cmd, "state")) {
+        ok = 0;
+    }
+    size_t len = 0;
+    const char* raw = g_open && g_dialog ? ui::DialogText(g_dialog, &len) : nullptr;
+    std::string text(raw ? raw : "", raw ? len : 0), safe;
+    for (char c : text)
+        if (c != '"' && c != '\\' && static_cast<unsigned char>(c) >= 0x20)
+            safe += c;
+    float area[4] = {};
+    const bool haveArea = g_open && g_dialog && ui::DialogListArea(g_dialog, area);
+    _snprintf_s(out, size, _TRUNCATE,
+                "{\"open\":%s,\"screen\":%d,\"typing\":%d,\"text\":\"%s\",\"suggestions\":%d,\"top\":%d,\"selected\":%d,\"hover\":%d,"
+                "\"listArea\":%s,\"area\":[%.1f,%.1f,%.1f,%.1f]}",
+                g_open ? "true" : "false", g_dialogTest.screen, g_dialogTest.typing, safe.c_str(), static_cast<int>(g_suggested.size()), g_top,
+                g_selected, g_hover, haveArea ? "true" : "false", area[0], area[1], area[2], area[3]);
+    return ok;
+}
+#endif
+
 bool QueueSearch(const char* text)
 {
     if (!text || strlen(text) >= sizeof(g_request)) return false;
@@ -2018,6 +2105,11 @@ bool Init(const Config& config)
 extern "C" __declspec(dllexport) bool FindQueueSearch(const char* text)
 {
     return find::QueueSearch(text);
+}
+
+extern "C" __declspec(dllexport) int FindDialogTest(const char* cmd, char* out, int size)
+{
+    return find::DialogTest(cmd, out, size);
 }
 
 extern "C" __declspec(dllexport) bool FindNativeStatus(nativehighlight::Status* out)

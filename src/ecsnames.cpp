@@ -4,7 +4,7 @@
 // static component tables in the exe use another order). The registry keeps, somewhere, a
 // table from index to the component's reflection descriptor, whose first two qwords are the
 // short name and its length ("HighlightColor", 14). It is found once by looking through the
-// registry's pointers for an array whose entries 283 and 133 name Inventory and Position.
+// registry's pointers for an array whose entries name Inventory and Position.
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
@@ -24,7 +24,11 @@ bool g_tried = false;
 
 bool InImage(uint64_t v)
 {
-    return v >= 0x140000000ull && v < 0x150000000ull;
+    // The exe's real address: it does not load at its preferred 0x140000000.
+    static const uint64_t base = reinterpret_cast<uint64_t>(GetModuleHandleW(nullptr));
+    static const uint64_t size = reinterpret_cast<const IMAGE_NT_HEADERS64*>(
+        base + reinterpret_cast<const IMAGE_DOS_HEADER*>(base)->e_lfanew)->OptionalHeader.SizeOfImage;
+    return v >= base && v < base + size;
 }
 
 // The descriptor's short name, if p looks like one.
@@ -68,11 +72,23 @@ uint64_t EntryDesc(uint8_t* table, size_t stride, size_t field, bool deref, size
     return Read(reinterpret_cast<uint8_t*>(v) + derefField);
 }
 
+// Whether Inventory and Position are in the table; their indices differ between game sessions.
 bool Matches(uint8_t* table, size_t stride, size_t field, bool deref, size_t derefField)
 {
-    char a[96], b[96];
-    return DescName(EntryDesc(table, stride, field, deref, derefField, 283), a, sizeof(a)) && strcmp(a, "Inventory") == 0 &&
-           DescName(EntryDesc(table, stride, field, deref, derefField, 133), b, sizeof(b)) && strcmp(b, "Position") == 0;
+    char name[96];
+    bool any = false;
+    for (int i = 0; i < 4 && !any; ++i)
+        any = DescName(EntryDesc(table, stride, field, deref, derefField, i), name, sizeof(name));
+    if (!any)
+        return false;
+    bool inventory = false, position = false;
+    for (int i = 0; i < kTypes && !(inventory && position); ++i) {
+        if (!DescName(EntryDesc(table, stride, field, deref, derefField, i), name, sizeof(name)))
+            continue;
+        inventory = inventory || strcmp(name, "Inventory") == 0;
+        position = position || strcmp(name, "Position") == 0;
+    }
+    return inventory && position;
 }
 
 void Discover(void* registry)

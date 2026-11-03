@@ -1,3 +1,4 @@
+#include "../../common/field_id.h"
 #include "../../common/ui_mesh.h"
 #include "hotapi.h"
 // The game's immediate-mode UI (build 1269579).
@@ -25,7 +26,7 @@
 //   button: +0x04 0x10202 (+0x07 set when clicked), +0x08 0x100, +0x10 3, +0x4c 10.0,
 //   +0x50 5.0, +0x54 1.0, +0x58 1, +0x78 label text.
 //   The field (140b12120) keeps what is typed in its own edit state, looked up every frame by
-//   140af9040 FieldState(field, 0x397c0808484b9ef3, 1) (0x1990 bytes); the state takes the
+//   140af9040 FieldState(field, text field id, 1) (0x1990 bytes); the state takes the
 //   desc's text only when it is created. 1411b0370 SetEditText(&result, state + 0x10, &utf8)
 //   replaces the edited text and puts the cursor at its end; Find calls it while its own
 //   dialog draws, from the dialog's own "call FieldState"s (redirected), so FieldState's bytes
@@ -80,7 +81,7 @@ DialogInitFn g_dialogInit = nullptr;
 LocaTextFn g_locaText = nullptr;
 FieldStateFn g_originalFieldState = nullptr;
 SetEditTextFn g_setEditText = nullptr;
-constexpr uint64_t kTextFieldId = 0x397c0808484b9ef3ull; // 0x64d2790860d9c7f6 before the 2026-11-02 patch
+uint64_t g_textFieldId = 0; // read from FieldState's callers (common/field_id.h)
 constexpr size_t kStateEdit = 0x10;
 using CloseKeyboardFn = void (*)(void*, uint32_t);
 CloseKeyboardFn g_closeKeyboard = nullptr;
@@ -173,12 +174,12 @@ void CopyRect(const void* widget, float out[4])
 uint8_t* FieldStateHookBody(void* field, uint64_t id, uint32_t create)
 {
     uint8_t* state = g_originalFieldState(field, id, create);
-    if (g_drawing && id == kTextFieldId && state) {
+    if (g_drawing && id == g_textFieldId && state) {
         g_findEditState = state;
         auto root = static_cast<uint8_t*>(G());
         g_findEditOwner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
     }
-    if (g_drawing && id == kTextFieldId && field) {
+    if (g_drawing && id == g_textFieldId && field) {
         CopyRect(field, g_fieldRect);
         // The lines come after the field: bars drawn now sit behind their text (positions are
         // last frame's, as the lines do not move between frames).
@@ -187,7 +188,7 @@ uint8_t* FieldStateHookBody(void* field, uint64_t id, uint32_t create)
             DrawHighlights(g_drawing, field);
         }
     }
-    if (g_drawing && g_pending.set && id == kTextFieldId && state && g_setEditText) {
+    if (g_drawing && g_pending.set && id == g_textFieldId && state && g_setEditText) {
         g_pending.set = false;
         struct {
             const char* ptr;
@@ -237,6 +238,8 @@ bool HookFieldState(uint8_t* start)
     for (int i = 0; i < found; ++i)
         if (g_dialog && FunctionStart(all[i]) == reinterpret_cast<uint8_t*>(g_dialog))
             calls[n++] = all[i];
+    if (!fieldid::OfCalls(all, found, hot::Read, g_textFieldId))
+        Log("dialog: the text field id was not found: results cannot be clicked and the keyboard may stay taken");
     int redirected = 0;
     for (int i = 0; i < n; ++i) {
         void* previous = RedirectCall(calls[i], reinterpret_cast<void*>(&FieldStateHook));

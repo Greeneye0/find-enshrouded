@@ -6,7 +6,7 @@
 #include "log.h"
 #include "ui.h"
 
-#define FIND_VERSION "1.2.5"
+#define FIND_VERSION "1.2.6"
 
 bool LoadProxyTargets();
 
