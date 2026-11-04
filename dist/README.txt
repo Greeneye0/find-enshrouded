@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.6
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.8
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -96,7 +96,7 @@ GOOD TO KNOW
   own dbgcore.dll.
 - Works next to other mods. Where another mod (Creative Mode, Quick Deposit, Auto Loot)
   hooks the same game function, Find chains onto its hook instead of replacing it.
-- Made for the current game version (build 1285601). After a game update the mod checks
+- Made for the current game version (build 1287369). After a game update the mod checks
   that it still recognises the game; if not, it switches itself off and writes "inactive"
   to find.log instead of risking a crash.
 - If something goes wrong, greeneye\find\find.log says what the mod did and
@@ -105,6 +105,20 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.8
+- A game patch that only moves the game's code should no longer turn off the smooth chest
+  outlines: they find the game's functions themselves.
+- Find's log and the Greeneye Loader's (now 1.2.2) are written in the background, so a slow
+  drive can't stall the game through them. This may help the freezes HadToRegister reported.
+
+1.2.7
+- Updated for the 4 November 2026 game patch (game build 1287369): chests glow through walls
+  with smooth outlines again.
+- Language: a Russian game can no longer get Ukrainian text, and Portuguese is recognised in
+  every form.
+Reported bugs fixed:
+- The window in Ukrainian on a game set to Russian (reported by mrniced).
+
 1.2.6
 - Updated for the 3 November 2026 game patch (game build 1285601). The game's text box id
   changed, so after a search the game stayed in typing mode: menus couldn't be backed out

@@ -1,0 +1,2 @@
+- A game patch that only moves the game's code should no longer turn off the smooth chest outlines: they find the game's functions themselves.
+- Find's log and the Greeneye Loader's (now 1.2.2) are written in the background, so a slow drive can't stall the game through them. This may help the freezes HadToRegister reported.

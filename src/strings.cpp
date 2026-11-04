@@ -285,16 +285,16 @@ void Detect()
         lang = Es;
     else if (StartsWith(s, n, "leggend"))
         lang = It;
-    else if (StartsWith(s, n, "lend"))
+    else if (StartsWith(s, n, T("legendá")) || StartsWith(s, n, T("legendÁ")) || StartsWith(s, n, "lend"))
         lang = Pt;
     else if (StartsWith(s, n, "legendarn"))
         lang = Pl;
     else if (StartsWith(s, n, "efsane"))
         lang = Tr;
-    else if (Contains(s, n, T("ы")) || Contains(s, n, T("Ы")))
-        lang = Ru;
+    else if (Contains(s, n, T("Легендарн.")))
+        lang = Uk; // Russian is "Легенд."; both are shortened, so neither has a letter of its own
     else if (Contains(s, n, T("Леген")) || Contains(s, n, T("ЛЕГЕН")))
-        lang = Uk;
+        lang = Ru;
     else if (Contains(s, n, T("전설")))
         lang = Ko;
     else if (Contains(s, n, T("レジェ")) || Contains(s, n, T("伝説")))
