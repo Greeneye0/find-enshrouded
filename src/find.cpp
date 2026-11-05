@@ -1,4 +1,5 @@
 #include "hotapi.h"
+#include "../../common/game_hints.h"
 // Hotkey (Shift+F by default, find.ini): search the chests of the base you stand in for an
 // item or a chest name, with suggestions while typing, and make every matching chest glow
 // (build 1269579).
@@ -174,7 +175,13 @@ struct Index {
     int chestCount = 0;
 };
 
-Hotkey g_hotkey;
+Bindings g_keys;
+greeneye::input::SharedBinding g_openPad;
+std::atomic<uint16_t> g_padHiddenNow{0};     // the search's own buttons while it is open
+std::atomic<ULONGLONG> g_padLiveUntil{0};    // the chord may open the search (play or inventory)
+greeneye::input::PadPresses g_padNav;
+bool g_browse = false;                       // a controller with nothing typed: list everything
+bool g_tipsShown = false;                    // this search has its tips
 ULONGLONG g_glowLifetimeMs = 180000;
 float g_arrivedMeters = 2.5f;
 ULONGLONG g_afterArrivalMs = 3000;
@@ -201,7 +208,7 @@ std::vector<int> g_suggested; // entry indices, best first
 int g_selected = -1;
 int g_top = 0;                // the first suggestion shown (the list scrolls)
 std::string g_notice;         // "nothing found" and the like, shown until the text changes
-bool g_navDown[5] = {};       // Tab, Up, Down, left mouse button, Enter edges
+bool g_navDown[6] = {};       // next, up, down, left mouse button, confirm, previous edges
 ULONGLONG g_clickAt = 0;       // the last click on a suggestion
 int g_hover = -1;              // the suggestion under the mouse
 constexpr ULONGLONG kDoubleClickMs = 500;
@@ -211,9 +218,7 @@ constexpr ULONGLONG kTabSpaceMs = 400;
 
 bool GameFocused()
 {
-    DWORD pid = 0;
-    GetWindowThreadProcessId(GetForegroundWindow(), &pid);
-    return pid == GetCurrentProcessId();
+    return greeneye::input::GameHasFocus();
 }
 
 bool PlayerPosition(float out[3])
@@ -777,7 +782,7 @@ void UpdateSuggestions()
     std::string q = Lower(Trim(g_typed));
     std::vector<std::pair<int, int>> ranked; // rank, entry
     for (int i = 0; i < static_cast<int>(g_index.entries.size()); ++i) {
-        int r = Rank(g_index.entries[i].lower, q);
+        int r = q.empty() && g_browse ? 3 : Rank(g_index.entries[i].lower, q);
         if (r >= 0)
             ranked.push_back({r, i});
     }
@@ -852,7 +857,7 @@ void ShowMessage()
         lines.push_back(g_notice);
     } else if (!g_index.ok) {
         lines.push_back(strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase));
-    } else if (Trim(g_typed).empty()) {
+    } else if (Trim(g_typed).empty() && !g_browse) {
         lines.push_back(strings::Get(strings::TypePrompt));
     } else if (g_suggested.empty()) {
         lines.push_back(Format(strings::NoMatch, Trim(g_typed)));
@@ -872,6 +877,61 @@ void ShowMessage()
     ui::SetDialogLines(g_dialog, lines);
     // Small key hints under the buttons
     ui::SetDialogHint(g_dialog, strings::Get(g_index.ok ? strings::Hint : strings::HintClose));
+}
+
+// The label of each part of a hint line ("Tab  choose     Click  choose     Enter  find": choose, choose, find).
+std::vector<std::string> HintLabels(const std::string& line)
+{
+    std::vector<std::string> labels;
+    size_t from = 0;
+    while (from < line.size()) {
+        size_t gap = line.find("     ", from);
+        std::string part = line.substr(from, gap == std::string::npos ? std::string::npos : gap - from);
+        from = gap == std::string::npos ? line.size() : gap + 5;
+        size_t cut = part.rfind("  ");
+        if (cut == std::string::npos)
+            return {};
+        labels.push_back(part.substr(cut + 2));
+    }
+    return labels;
+}
+
+// The game's own tips under the buttons, in this language's words, for the device the game is showing.
+void ShowTips()
+{
+    using namespace greeneye::input;
+    const bool pad = greeneye::hints::PadInUse();
+    static int shownFor = -1;
+    static uint64_t shownKeys = 0;
+    const uint64_t keys = static_cast<uint64_t>(g_keys.confirm.keys[0].vk) | static_cast<uint64_t>(g_keys.next.keys[0].vk) << 8 |
+                          static_cast<uint64_t>(g_keys.close.keys[0].vk) << 16 | static_cast<uint64_t>(g_keys.confirm.pads[0].buttons) << 24 |
+                          static_cast<uint64_t>(g_keys.down.pads[0].buttons) << 40 | static_cast<uint64_t>(g_index.ok) << 56;
+    if (shownFor == static_cast<int>(pad) && shownKeys == keys && g_tipsShown)
+        return;
+    shownFor = pad;
+    shownKeys = keys;
+    g_tipsShown = true;
+    const std::vector<std::string> open = HintLabels(strings::Get(strings::Hint));
+    const std::vector<std::string> closing = HintLabels(strings::Get(strings::HintClose));
+    std::vector<ui::DialogTip> tips;
+    auto add = [&](const std::string& label, const Binding& binding) {
+        if (greeneye::hints::ShowsOn(binding, pad))
+            tips.push_back({label, binding});
+    };
+    if (open.size() == 3 && closing.size() == 1) {
+        if (!g_index.ok) {
+            add(closing[0], g_keys.close);
+        } else if (pad) {
+            add(open[0], g_keys.down);
+            add(open[2], g_keys.confirm);
+            add(closing[0], g_keys.close);
+        } else {
+            add(open[0], g_keys.next);
+            add(open[1], MakeBinding("Mouse1"));
+            add(open[2], g_keys.confirm);
+        }
+    }
+    ui::SetDialogTips(g_dialog, tips);
 }
 
 void Select(int index)
@@ -1424,9 +1484,12 @@ LRESULT CALLBACK KeyHookProc(int code, WPARAM wp, LPARAM lp)
                 g_rawCtrl = down;
             else if (vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU)
                 g_rawAlt = down;
-            else if (down && vk == g_hotkey.key && g_rawShift == g_hotkey.shift && g_rawCtrl == g_hotkey.ctrl &&
-                     g_rawAlt == g_hotkey.alt)
-                g_hotkeyArrived = true;
+            else if (down)
+                for (int i = 0; i < g_keys.open.keyCount; ++i) {
+                    const greeneye::input::KeyChord& key = g_keys.open.keys[i];
+                    if (vk == key.vk && g_rawShift == key.shift && g_rawCtrl == key.ctrl && g_rawAlt == key.alt)
+                        g_hotkeyArrived = true;
+                }
         }
     }
     return CallNextHookEx(nullptr, code, wp, lp);
@@ -1453,6 +1516,20 @@ void HookKeys(bool on)
     g_keyHook = SetWindowsHookExW(WH_GETMESSAGE, &KeyHookProc, nullptr, thread);
     Log(g_keyHook ? "hotkey: watching the game's keyboard input" : "hotkey: no message hook (error %lu), short key presses may be missed",
         GetLastError());
+}
+
+// What the game reads from a pad: the opening chord's button once its modifier is held, and the open
+// search's buttons (all hidden until they come up, so closing with B does not also open a menu).
+void FindPadFilter(XINPUT_GAMEPAD& pad, DWORD user)
+{
+    using namespace greeneye::input;
+    static PadHide hide;
+    uint16_t mask = 0;
+    if (GetTickCount64() < g_padLiveUntil.load()) {
+        mask = g_padHiddenNow.load();
+        mask |= PadHideMask(g_openPad.Get(), PadState{pad.wButtons, pad.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD, pad.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD});
+    }
+    pad.wButtons = hide.Apply(pad.wButtons, user, mask);
 }
 
 SRWLOCK g_requestLock = SRWLOCK_INIT;
@@ -1495,11 +1572,24 @@ void Tick()
         else { g_index = BuildIndex(); Search(request); }
         return;
     }
-    auto held = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
+    using namespace greeneye::input;
+    auto held = [](int vk) { return KeyDown(vk); };
     bool focused = GameFocused();
+    if (RefreshBindings(g_keys))
+        Log("keys: open %s", BindingToText(g_keys.open).c_str());
+    const PadState pad = ReadPad();
+    const uint16_t padPressed = g_padNav.Update(pad.buttons, GetTickCount64());
+    g_openPad.Set(g_keys.open);
+    {
+        const int playing = Screen();
+        if (g_open || playing == kScreenPlaying || playing == kScreenInventory)
+            g_padLiveUntil = GetTickCount64() + 250;
+        g_padHiddenNow = g_open ? uint16_t(PadButtons(g_keys.up) | PadButtons(g_keys.down) | PadButtons(g_keys.close) |
+                                           (g_selected >= 0 ? PadButtons(g_keys.confirm) : 0))
+                                : uint16_t(0);
+    }
     // Modifiers must match exactly, so Shift+F does not also fire on Ctrl+Shift+F.
-    bool down = focused && held(g_hotkey.key) && held(VK_SHIFT) == g_hotkey.shift &&
-                held(VK_CONTROL) == g_hotkey.ctrl && held(VK_MENU) == g_hotkey.alt;
+    bool down = focused && (KeysHeld(g_keys.open, held) || PadHeld(g_keys.open, pad));
     HookKeys(true);
     bool arrived = g_hotkeyArrived.exchange(false); // a press too short for the check above
     bool pressed = (down && !g_keyWasDown) || (arrived && focused);
@@ -1521,7 +1611,7 @@ void Tick()
             g_openPending = true;
     }
     // Open when the key comes up, so its letter has already gone to the game, not the field.
-    if (g_openPending && !held(g_hotkey.key)) {
+    if (g_openPending && !PartsHeld(g_keys.open, held, pad)) {
         g_openPending = false;
         strings::Detect(); // the game's language (it can be changed in the game)
         if (static bool logged = false; !logged) {
@@ -1537,6 +1627,8 @@ void Tick()
         g_typed.clear();
         g_notice.clear();
         g_suggested.clear();
+        g_browse = false;
+        g_tipsShown = false;
         g_selected = -1;
         g_hover = -1;
         for (bool& b : g_navDown)
@@ -1573,6 +1665,7 @@ void Tick()
 #endif
     if (!g_open)
         return;
+    ShowTips();
 
     if (g_openedInventory && Screen() == kScreenBehindSearch)
         g_screenReached = true;
@@ -1582,7 +1675,7 @@ void Tick()
     }
     // The screen the search opened was closed (Escape): close with it.
     // (Only once it was there: a screen that closes itself right away must not close the search.)
-    bool escape = GameFocused() && (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    bool escape = focused && (KeysHeld(g_keys.close, held) || PadHeld(g_keys.close, pad));
     bool escapePressed = escape && !g_escapeWasDown;
     if (escapePressed) g_escapeAt = GetTickCount64();
     g_escapeWasDown = escape;
@@ -1613,7 +1706,7 @@ void Tick()
     // typed) and Enter closes.
     if (!g_index.ok) {
         ui::DisableDialogField();
-        if (r == 2 || Edge(4, focused && held(VK_RETURN))) {
+        if (r == 2 || Edge(4, focused && (KeysHeld(g_keys.confirm, held) || PadHeld(g_keys.confirm, pad)))) {
             CloseSearch(" (not in a base)");
             return;
         }
@@ -1623,7 +1716,7 @@ void Tick()
     }
     // Enter finds even when the field lost the keyboard to a click on the list (the dialog
     // itself would only take the field back with that press).
-    if (r != 2 && Edge(4, focused && held(VK_RETURN)) && !Trim(text).empty())
+    if (r != 2 && Edge(4, focused && (KeysHeld(g_keys.confirm, held) || PadHeld(g_keys.confirm, pad))) && !Trim(text).empty())
         r = 2;
     if (r == 2) {
         g_step = "search";
@@ -1638,13 +1731,19 @@ void Tick()
         ShowMessage();
         return;
     }
-    bool shift = held(VK_SHIFT);
-    bool tab = Edge(0, focused && held(VK_TAB));
-    bool up = Edge(1, focused && held(VK_UP));
-    bool downKey = Edge(2, focused && held(VK_DOWN));
+    bool next = Edge(0, focused && KeysHeld(g_keys.next, held)) || (focused && PadPressed(g_keys.next, padPressed, pad));
+    bool previous = Edge(5, focused && KeysHeld(g_keys.previous, held)) || (focused && PadPressed(g_keys.previous, padPressed, pad));
+    bool padStep = focused && (PadPressed(g_keys.up, padPressed, pad) || PadPressed(g_keys.down, padPressed, pad));
+    bool up = Edge(1, focused && KeysHeld(g_keys.up, held)) || (focused && PadPressed(g_keys.up, padPressed, pad));
+    bool downKey = Edge(2, focused && KeysHeld(g_keys.down, held)) || (focused && PadPressed(g_keys.down, padPressed, pad));
     ULONGLONG now = GetTickCount64();
-    if (tab)
+    if (next || previous)
         g_tabAt = now;
+    // A controller with nothing typed: the list shows everything in the base, for picking from.
+    if (padStep && !g_browse && Trim(text).empty() && g_index.ok) {
+        g_browse = true;
+        UpdateSuggestions();
+    }
     if (text != g_lastText && now - g_tabAt < kTabSpaceMs && text.size() == g_lastText.size() + 1 &&
         text.compare(0, g_lastText.size(), g_lastText) == 0 && isspace(static_cast<unsigned char>(text.back()))) {
         ui::SetDialogText(g_dialog, g_lastText); // the space Tab typed
@@ -1653,12 +1752,13 @@ void Tick()
     if (text != g_lastText) { // typed
         g_lastText = text;
         g_typed = text;
+        g_browse = false;
         g_notice.clear();
         UpdateSuggestions();
         ShowMessage();
     }
-    if ((tab || up || downKey) && !g_suggested.empty()) {
-        int step = (up || (tab && shift)) ? -1 : 1;
+    if ((next || previous || up || downKey) && !g_suggested.empty()) {
+        int step = (up || previous) ? -1 : 1;
         Select(g_selected < 0 ? (step > 0 ? 0 : -1) : g_selected + step);
         ShowMessage();
     }
@@ -2051,7 +2151,8 @@ bool QueueSearch(const char* text)
 
 bool Init(const Config& config)
 {
-    g_hotkey = config.hotkey;
+    g_keys = config.keys;
+    greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
     g_arrivedMeters = config.glow.nearMeters;
     g_afterArrivalMs = static_cast<ULONGLONG>(config.glow.nearSeconds * 1000.0f);
@@ -2075,6 +2176,8 @@ bool Init(const Config& config)
     g_originalLoop = reinterpret_cast<CommandLoopFn>(InstallHookChained(loop, reinterpret_cast<void*>(&CommandLoopHook), 13));
     // doPlayStateUi: mov r11, rsp; push rbp; lea rbp, [r11-218h]; sub rsp, 310h (18 bytes).
     g_originalPlayState = reinterpret_cast<PlayStateFn>(InstallHookChained(playState, reinterpret_cast<void*>(&PlayStateHook), 18));
+    if (hot::host && !greeneye::input::InstallPadFilter(hot::host, &FindPadFilter))
+        Log("XInput is not as expected; the game also sees the controller's search buttons");
     // markers: mov [rsp+10h], rdx; push rbp; push rdi; push r14; lea rbp, [rsp-200h] (17 bytes).
     g_originalSpatial = reinterpret_cast<SpatialMarkersFn>(InstallHookChained(spatial, reinterpret_cast<void*>(&SpatialMarkersHook), 17));
     if (!g_originalPlayState || !g_originalSpatial || !g_originalLoop) {

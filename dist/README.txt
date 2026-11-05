@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.8
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.9
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -105,6 +105,18 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.9
+- Controller support: hold LB and press X to open the search; the D-pad moves through the
+  list, A finds and B closes. With nothing typed, Up and Down list everything in the base.
+  Tested with an emulated controller, not yet on a real pad.
+- Every key can be rebound, and any can take a controller button: hotkey, confirm_key,
+  close_key, next_key, previous_key, up_key and down_key in find.ini.
+- Key and button tips use the game's own look and show your current binding: the rebound key
+  on a keyboard, the button icon on a controller.
+Reported bugs fixed:
+- Chests no longer showed through walls in 1.2.8: the lit chests' outlines weren't drawn.
+  They are again.
+
 1.2.8
 - A game patch that only moves the game's code should no longer turn off the smooth chest
   outlines: they find the game's functions themselves.

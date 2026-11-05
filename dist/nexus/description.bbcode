@@ -60,7 +60,7 @@ Stand in your base and press [b]Shift+F[/b]. A search box opens, drawn with the 
 
 [i]greeneye\find\find.ini[/i] is written on the first start. Restart the game after changing it.
 [list]
-[*][b]hotkey[/b] = Shift+F: the key that opens the search, for example [i]Ctrl+F[/i] or [i]F6[/i].
+[*][b]hotkey[/b] = Shift+F, Pad:LB+X: what opens the search, for example [i]Ctrl+F[/i] or [i]F6[/i]; a controller button goes after a comma.
 [*][b]glow_seconds[/b] = 180: the found chests glow at most this long (10-3600), or until your next search.
 [*][b]near_meters[/b] = 2.5: coming this close to a found chest counts as reaching it (0.5-20).
 [*][b]near_seconds[/b] = 3: a chest stops glowing this long after you reach or open it (0-60).
@@ -106,6 +106,17 @@ If something doesn't work, please post these two files from the game folder with
 [line]
 
 [size=4][b]Changelog[/b][/size]
+
+[b]1.2.9[/b]
+[list]
+[*]Controller support: hold LB and press X to open the search; the D-pad moves through the list, A finds and B closes. With nothing typed, Up and Down list everything in the base. Tested with an emulated controller, not yet on a real pad.
+[*]Every key can be rebound, and any can take a controller button: hotkey, confirm_key, close_key, next_key, previous_key, up_key and down_key in find.ini.
+[*]Key and button tips use the game's own look and show your current binding: the rebound key on a keyboard, the button icon on a controller.
+[/list]
+Reported bugs fixed:
+[list]
+[*]Chests no longer showed through walls in 1.2.8: the lit chests' outlines weren't drawn. They are again.
+[/list]
 
 [b]1.2.8[/b]
 [list]

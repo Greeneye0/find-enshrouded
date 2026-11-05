@@ -40,7 +40,9 @@ are added to it) holds:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `hotkey` | `Shift+F` | the key that opens the search: a letter, digit or F1-F12, with `Shift+`, `Ctrl+` and/or `Alt+` in front if you like |
+| `hotkey` | `Shift+F, Pad:LB+X` | what opens the search: a key, with `Shift+`, `Ctrl+` and/or `Alt+` in front if you like, and a controller button after a comma (hold LB, press X) |
+| `confirm_key`, `close_key` | `Enter, Pad:A`, `Esc, Pad:B` | find, close |
+| `next_key`, `previous_key`, `up_key`, `down_key` | `Tab`, `Shift+Tab`, `Up, Pad:Up`, `Down, Pad:Down` | move through the list; with a controller and nothing typed, Up and Down list everything in the base |
 | `glow_seconds` | `180` | the found chests glow at most this long (10-3600), or until your next search |
 | `near_meters` | `2.5` | coming this close to a found chest counts as reaching it (0.5-20) |
 | `near_seconds` | `3` | a chest stops glowing this long after you reach or open it (0-60) |

@@ -6,7 +6,7 @@
 #include "log.h"
 #include "ui.h"
 
-#define FIND_VERSION "1.2.8"
+#define FIND_VERSION "1.2.9"
 
 bool LoadProxyTargets();
 
@@ -31,7 +31,7 @@ static bool StartFind(const char* how, const GreeneyeHost* host)
         Log("inactive: this game version is not supported");
         return false;
     }
-    Log("ready: %s to find; chests glow %gs at most, %gs after you come within %gm", config.hotkeyText.c_str(),
+    Log("ready: %s to find; chests glow %gs at most, %gs after you come within %gm", greeneye::input::BindingToText(config.keys.open).c_str(),
         config.glow.glowSeconds, config.glow.nearSeconds, config.glow.nearMeters);
     return true;
 }
@@ -44,6 +44,7 @@ GREENEYE_MOD_START
     if (!greeneye::HostOk(host) || host->side != kGreeneyeClient)
         return false;
     hot::host = greeneye::HostHasHooks(host) ? host : nullptr;
+    greeneye::UseHost(host); // the shared code's host: ui_mesh.h finds the through-wall outlines' functions with it
     greeneye::SetDataDir(host->modDir);
     greeneye::Migrate("find.ini");
     return StartFind("Greeneye Loader", host);

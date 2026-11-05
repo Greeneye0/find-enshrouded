@@ -97,14 +97,16 @@ int main()
         ok &= Check("  bytes after its jump untouched", form == 1 ? memcmp(after + 9, f + 14, 7) == 0 : memcmp(after, f + 5, sizeof(after)) == 0);
     }
 
-    Hotkey h;
-    ok &= Check("Shift+F", ParseHotkey("Shift+F", h) && h.key == 'F' && h.shift && !h.ctrl && !h.alt);
-    ok &= Check("ctrl + alt + g (any case, spaces)", ParseHotkey(" ctrl + alt + g ", h) && h.key == 'G' && h.ctrl && h.alt && !h.shift);
-    ok &= Check("F6", ParseHotkey("F6", h) && h.key == VK_F6 && !h.shift);
-    ok &= Check("Shift+F12", ParseHotkey("Shift+F12", h) && h.key == VK_F12 && h.shift);
-    ok &= Check("7", ParseHotkey("7", h) && h.key == '7');
-    ok &= Check("rejects Hyper+F", !ParseHotkey("Hyper+F", h));
-    ok &= Check("rejects empty and F99", !ParseHotkey("", h) && !ParseHotkey("F99", h));
+    using namespace greeneye::input;
+    Binding h;
+    const Binding base = MakeBinding("Shift+F, Pad:LB+X");
+    ok &= Check("Shift+F", ParseBinding("Shift+F", base, h) && h.keys[0].vk == 'F' && h.keys[0].shift && !h.keys[0].ctrl && !h.keys[0].alt);
+    ok &= Check("ctrl + alt + g (any case, spaces)", ParseBinding(" ctrl + alt + g ", base, h) && h.keys[0].vk == 'G' && h.keys[0].ctrl && h.keys[0].alt && !h.keys[0].shift);
+    ok &= Check("an old hotkey keeps the controller default", ParseBinding("F6", base, h) && h.keys[0].vk == VK_F6 && h.padCount == 1 && h.pads[0].buttons == (kPadLB | kPadX));
+    ok &= Check("Shift+F12", ParseBinding("Shift+F12", base, h) && h.keys[0].vk == VK_F12 && h.keys[0].shift);
+    ok &= Check("7", ParseBinding("7", base, h) && h.keys[0].vk == '7');
+    ok &= Check("rejects Hyper+F", !ParseBinding("Hyper+F", base, h) && h.keys[0].vk == 'F');
+    ok &= Check("rejects F99", !ParseBinding("F99", base, h));
     float v = 0;
     ok &= Check("number 180", ParseNumber(" 180 ", 10, 3600, v) && v == 180.0f);
     ok &= Check("number 2.5", ParseNumber("2.5", 0.5f, 20, v) && v == 2.5f);

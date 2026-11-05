@@ -12,7 +12,6 @@
 namespace {
 
 constexpr char kFile[] = "find.ini";
-constexpr char kDefaultHotkey[] = "Shift+F";
 
 std::string Trim(std::string s)
 {
@@ -24,40 +23,60 @@ std::string Trim(std::string s)
     return s.substr(i);
 }
 
-std::string Upper(std::string s)
-{
-    for (char& c : s)
-        c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
-    return s;
-}
-
-// "F" -> 'F', "7" -> '7', "F6" -> VK_F6, plus a few named keys.
-int KeyCode(const std::string& k)
-{
-    if (k.size() == 1 && (isalpha(static_cast<unsigned char>(k[0])) || isdigit(static_cast<unsigned char>(k[0]))))
-        return k[0];
-    if (k.size() >= 2 && k[0] == 'F' && isdigit(static_cast<unsigned char>(k[1]))) {
-        int n = atoi(k.c_str() + 1);
-        if (n >= 1 && n <= 24)
-            return VK_F1 + n - 1;
-    }
-    static const struct {
-        const char* name;
-        int vk;
-    } named[] = {{"TAB", VK_TAB}, {"SPACE", VK_SPACE}, {"INSERT", VK_INSERT}, {"HOME", VK_HOME},
-                 {"END", VK_END}, {"PAGEUP", VK_PRIOR}, {"PAGEDOWN", VK_NEXT}, {"DELETE", VK_DELETE},
-                 {"BACKSPACE", VK_BACK}};
-    for (const auto& n : named)
-        if (k == n.name)
-            return n.vk;
-    return 0;
-}
-
 constexpr char kHeader[] = "; Find - search your base's chests for an item or a chest name.\n";
 constexpr char kHotkeyText[] =
-    "; hotkey: the key that opens the search. A letter, digit or F1-F12, optionally with\n"
-    ";         Shift+, Ctrl+ and/or Alt+ in front. Examples: Shift+F, Ctrl+F, Alt+G, F6\n"
-    "hotkey = Shift+F\n";
+    "; hotkey: the key that opens the search. A letter, digit, F1-F24, Enter, Tab, Mouse1-Mouse5 and\n"
+    ";         so on, optionally with Shift+, Ctrl+ and/or Alt+ in front. Examples: Shift+F, Ctrl+F, F6\n"
+    ";         A controller button goes after a comma: Pad: and any of A B X Y LB RB LT RT LS RS View\n"
+    ";         Menu Up Down Left Right, joined with +. Default Pad:LB+X: hold LB, press X.\n"
+    ";         NoPad turns the controller off, NoKeys the keyboard, None both.\n"
+    ";         All keys here apply within two seconds; no restart needed.\n"
+    "hotkey = Shift+F, Pad:LB+X\n";
+// Added after find.ini first shipped, appended to a file that lacks them.
+constexpr char kDialogKeysText[] =
+    "; In the open search: find, close, move through the list. Same format as hotkey.\n"
+    "; With a controller and nothing typed, Up and Down list everything in the base.\n"
+    "confirm_key = Enter, Pad:A\n"
+    "close_key = Esc, Pad:B\n"
+    "next_key = Tab\n"
+    "previous_key = Shift+Tab\n"
+    "up_key = Up, Pad:Up\n"
+    "down_key = Down, Pad:Down\n";
+
+struct BindingSetting {
+    const char* key;
+    const char* defaultText;
+    greeneye::input::Binding Bindings::* field;
+};
+constexpr BindingSetting kBindings[] = {
+    {"hotkey", "Shift+F, Pad:LB+X", &Bindings::open},
+    {"confirm_key", "Enter, Pad:A", &Bindings::confirm},
+    {"close_key", "Esc, Pad:B", &Bindings::close},
+    {"next_key", "Tab", &Bindings::next},
+    {"previous_key", "Shift+Tab", &Bindings::previous},
+    {"up_key", "Up, Pad:Up", &Bindings::up},
+    {"down_key", "Down, Pad:Down", &Bindings::down},
+};
+
+void DefaultBindings(Bindings& keys)
+{
+    for (const BindingSetting& b : kBindings)
+        keys.*b.field = greeneye::input::MakeBinding(b.defaultText);
+}
+
+// One line of find.ini, if it sets a key. The name given back tells the caller it was one.
+bool ReadBindingLine(const std::string& key, const std::string& value, Bindings& keys)
+{
+    for (const BindingSetting& b : kBindings) {
+        if (key != b.key)
+            continue;
+        std::string why;
+        if (!greeneye::input::ParseBinding(value, greeneye::input::MakeBinding(b.defaultText), keys.*b.field, &why))
+            Log("find.ini: %s: '%s' is not a key or button Find knows, using %s", b.key, why.c_str(), b.defaultText);
+        return true;
+    }
+    return false;
+}
 
 // The glow settings: name, default text, range, comment, and where the value goes.
 struct Number {
@@ -91,6 +110,7 @@ void WriteDefaults()
         return;
     fputs(kHeader, f);
     fputs(kHotkeyText, f);
+    fputs(kDialogKeysText, f);
     for (const Number& n : kNumbers)
         WriteNumber(f, n);
     fclose(f);
@@ -111,38 +131,43 @@ bool ParseNumber(const char* text, float lo, float hi, float& out)
     return true;
 }
 
-bool ParseHotkey(const char* text, Hotkey& out)
+bool RefreshBindings(Bindings& keys)
 {
-    out = {};
-    std::string rest = Upper(Trim(text));
-    size_t plus;
-    while ((plus = rest.find('+')) != std::string::npos && plus + 1 < rest.size()) {
-        std::string mod = Trim(rest.substr(0, plus));
-        rest = Trim(rest.substr(plus + 1));
-        if (mod == "SHIFT")
-            out.shift = true;
-        else if (mod == "CTRL" || mod == "CONTROL")
-            out.ctrl = true;
-        else if (mod == "ALT")
-            out.alt = true;
-        else
-            return false;
+    static greeneye::input::FileWatch watch;
+    if (!watch.Changed(greeneye::DataPath(kFile)))
+        return false;
+    FILE* f = fopen(greeneye::DataPath(kFile), "r");
+    if (!f)
+        return false;
+    Bindings fresh;
+    DefaultBindings(fresh);
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        std::string s = Trim(line);
+        size_t eq = s.find('=');
+        if (s.empty() || s[0] == ';' || s[0] == '#' || eq == std::string::npos)
+            continue;
+        std::string key = Trim(s.substr(0, eq));
+        for (char& ch : key)
+            ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+        ReadBindingLine(key, Trim(s.substr(eq + 1)), fresh);
     }
-    out.key = KeyCode(rest);
-    return out.key != 0;
+    fclose(f);
+    keys = fresh;
+    return true;
 }
 
 Config LoadConfig()
 {
     Config c;
-    ParseHotkey(kDefaultHotkey, c.hotkey);
-    c.hotkeyText = kDefaultHotkey;
+    DefaultBindings(c.keys);
     FILE* f = fopen(greeneye::DataPath(kFile), "r");
     if (!f) {
         WriteDefaults();
         return c;
     }
     bool seen[sizeof(kNumbers) / sizeof(kNumbers[0])] = {};
+    bool dialogKeysSeen = false;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         std::string s = Trim(line);
@@ -154,15 +179,8 @@ Config LoadConfig()
         std::string key = Trim(s.substr(0, eq)), value = Trim(s.substr(eq + 1));
         for (char& ch : key)
             ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
-        if (key == "hotkey") {
-            Hotkey h;
-            if (ParseHotkey(value.c_str(), h)) {
-                c.hotkey = h;
-                c.hotkeyText = value;
-            } else {
-                Log("find.ini: hotkey '%s' not understood, using %s", value.c_str(), kDefaultHotkey);
-            }
-        }
+        ReadBindingLine(key, value, c.keys);
+        dialogKeysSeen = dialogKeysSeen || key == "confirm_key";
         for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {
             const Number& n = kNumbers[i];
             if (key != n.key)
@@ -186,6 +204,8 @@ Config LoadConfig()
             break;
         WriteNumber(add, kNumbers[i]);
     }
+    if (!dialogKeysSeen && (add || (add = fopen(greeneye::DataPath(kFile), "a"))))
+        fputs(kDialogKeysText, add);
     if (add)
         fclose(add);
     return c;

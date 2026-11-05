@@ -1,11 +1,10 @@
 #pragma once
 #include <string>
+#include "../../common/input_binds.h"
 
-struct Hotkey {
-    int key = 0; // virtual-key code
-    bool shift = false;
-    bool ctrl = false;
-    bool alt = false;
+// The keys and controller buttons of the search (common/input_binds.h).
+struct Bindings {
+    greeneye::input::Binding open, confirm, close, next, previous, up, down;
 };
 
 // How long the chests of a search glow.
@@ -16,13 +15,12 @@ struct GlowTimes {
 };
 
 struct Config {
-    Hotkey hotkey;
-    std::string hotkeyText; // as written in find.ini, for the log
+    Bindings keys;
     GlowTimes glow;
 };
 
-// "Shift+F", "Ctrl+Alt+G", "F6"; false if not understood.
-bool ParseHotkey(const char* text, Hotkey& out);
+// Reads the keys from find.ini again when it changed (checked at most every 2 s); true if it did.
+bool RefreshBindings(Bindings& keys);
 
 // "180", "2.5"; false unless a number in [lo, hi].
 bool ParseNumber(const char* text, float lo, float hi, float& out);

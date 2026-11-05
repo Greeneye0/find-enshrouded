@@ -1,6 +1,7 @@
 #include "../../common/field_id.h"
 #include "../../common/ui_mesh.h"
 #include "hotapi.h"
+#include "../../common/game_hints.h"
 // The game's immediate-mode UI (build 1269579).
 //
 // G = *0x14281b498. *(G + 200): UI assets and localized texts (image references are 16 bytes,
@@ -793,6 +794,7 @@ struct Dialog {
     Text lines[8];
     std::string hintStore;
     Text hint{};
+    std::vector<DialogTip> tips;
     int scrollFirst = 0, scrollVisible = 0, scrollTotal = 0; // the list's scroll position
     int selectedLine = -1, hoverLine = -1, shownLines = 0;   // bars behind lines (0-based, shown)
     uint32_t tints[8] = {};                                   // per shown line: 0xAABBGGRR, 0: none
@@ -800,9 +802,37 @@ struct Dialog {
 
 namespace {
 
+// The tips sit in the room a blank hint line keeps, side by side and centred. Widths are close to what
+// the game draws: the icon, its gap, and the label's letters.
+void DrawTips(Dialog* d)
+{
+    // A blank hint line keeps the room under the buttons; the tips go there.
+    static const Text blank = MakeText(" ");
+    DrawHintLabel(blank);
+    float rect[4];
+    std::memcpy(rect, g_rowRect, sizeof(rect));
+    if (rect[2] < 10.0f)
+        return; // no layout yet: the next frame has it
+    constexpr float kIcon = 26.0f, kCap = 44.0f, kLetter = 11.5f, kBetween = 26.0f;
+    float total = 0.0f;
+    for (const DialogTip& tip : d->tips)
+        total += kCap + kLetter * static_cast<float>(tip.label.size()) + kBetween;
+    float x = rect[0] + (rect[2] - (total - kBetween)) * 0.5f;
+    const float y = rect[1] + rect[3] + 22.0f;
+    int index = 0;
+    for (const DialogTip& tip : d->tips) {
+        char name[24];
+        sprintf_s(name, "findTip%d", index++);
+        greeneye::hints::Draw(x, y, tip.label.c_str(), tip.binding, name, kIcon);
+        x += kCap + kLetter * static_cast<float>(tip.label.size()) + kBetween;
+    }
+}
+
 void DrawHint(Dialog* d)
 {
-    if (d->hint.len)
+    if (!d->tips.empty() && greeneye::hints::CanDraw())
+        DrawTips(d);
+    else if (d->hint.len)
         DrawHintLabel(d->hint);
 }
 
@@ -1148,6 +1178,11 @@ bool CursorInUi(float& x, float& y)
     x = cursor.x * scale;
     y = cursor.y * scale;
     return true;
+}
+
+void SetDialogTips(Dialog* d, const std::vector<DialogTip>& tips)
+{
+    d->tips = tips;
 }
 
 void SetDialogHint(Dialog* d, const std::string& hint)

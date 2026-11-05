@@ -4,6 +4,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include "../../common/input_binds.h"
 
 // The game's immediate-mode UI (build 1269579), as far as Find needs it.
 namespace ui {
@@ -80,6 +81,12 @@ void SetDialogText(Dialog* d, const std::string& text);
 void SetDialogLines(Dialog* d, const std::vector<std::string>& lines);
 // A small, dim line under the buttons (key hints). Empty: none.
 void SetDialogHint(Dialog* d, const std::string& hint);
+// The game's own tips under the buttons instead of the hint line, for the keys and buttons they show now.
+struct DialogTip {
+    std::string label;
+    greeneye::input::Binding binding;
+};
+void SetDialogTips(Dialog* d, const std::vector<DialogTip>& tips);
 // The area between the field and the buttons where the lines are shown, in UI units
 // {x, y, w, h}, as laid out in the last frame. False until known.
 bool DialogListArea(Dialog* d, float out[4]);
