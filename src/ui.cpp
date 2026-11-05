@@ -794,10 +794,11 @@ struct Dialog {
     Text lines[8];
     std::string hintStore;
     Text hint{};
-    std::vector<DialogTip> tips;
     int scrollFirst = 0, scrollVisible = 0, scrollTotal = 0; // the list's scroll position
     int selectedLine = -1, hoverLine = -1, shownLines = 0;   // bars behind lines (0-based, shown)
     uint32_t tints[8] = {};                                   // per shown line: 0xAABBGGRR, 0: none
+    // Keep new fields here, at the end: The Worst Map Mod uses Find's dialog and writes the fields above by offset.
+    std::vector<DialogTip> tips;
 };
 
 namespace {

@@ -6,7 +6,7 @@
 #include "log.h"
 #include "ui.h"
 
-#define FIND_VERSION "1.2.9"
+#define FIND_VERSION "1.2.10"
 
 bool LoadProxyTargets();
 
@@ -39,6 +39,14 @@ static bool StartFind(const char* how, const GreeneyeHost* host)
 // Greeneye Loader (greeneye\find\find.dll): find.ini and find.log live in that folder; an
 // existing find.ini moves there from the game folder once. With the loader's API 2 every hook
 // goes through the loader, so Find can be reloaded while the game runs (generation 2, 3...).
+// The Worst Map Mod runs its Find box on this dialog. It finds the other functions by their bytes; this one's bytes change
+// with the compiler's inlining (Find 1.2.9 broke it that way), so it goes by name. Its presence also says the dialog's
+// fields are where the map writes them.
+extern "C" __declspec(dllexport) void FindMapDialogReset(ui::Dialog* dialog)
+{
+    ui::ClearDialog(dialog);
+}
+
 GREENEYE_MOD_START
 {
     if (!greeneye::HostOk(host) || host->side != kGreeneyeClient)

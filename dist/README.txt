@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.9
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.10
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -105,6 +105,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.10
+- The Worst Map Mod's Find box works with Find again: with Find 1.2.9 installed, its list
+  couldn't be hovered or clicked, and Tab typed a space. Update the map to 1.3.41 as well.
+- A search keeps glowing while the World Map or another menu is open. Opening the map for
+  more than 2 seconds used to end it.
+
 1.2.9
 - Controller support: hold LB and press X to open the search; the D-pad moves through the
   list, A finds and B closes. With nothing typed, Up and Down list everything in the base.

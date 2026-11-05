@@ -1824,9 +1824,9 @@ void DrawGlows()
     if (g_glows.empty())
         return;
     ULONGLONG now = GetTickCount64();
-    // No HUD frame for a while (a loading screen, another world) ends the search; an open chest
-    // window hides the HUD too, but the search goes on behind it.
-    if (now >= g_glowsUntil || (now - g_lastGlowDraw > 2000 && now - g_chestWindowAt > 2000)) {
+    // Its time running out ends the search. The HUD being away doesn't: the World Map, a chest window and other menus hide it, and
+    // the search goes on behind them. Leaving the base or the world ends it below.
+    if (now >= g_glowsUntil) {
         EndSearch();
         return;
     }
