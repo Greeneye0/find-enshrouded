@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.11
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.12
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -113,6 +113,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.12
+
+Reported bugs fixed:
+- On the Skills page, found skills didn't pulse and a single match didn't bring the view to
+  it after you had changed world or server in the same session. The search itself still
+  worked.
+
 1.2.11
 - Find searches the skill tree too: open the Skills page and press Shift+F (LB+X on a
   controller), then type part of a skill's name or of what it does, in your game's language.

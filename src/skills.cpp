@@ -224,6 +224,25 @@ uint8_t* Canvas(uint8_t* tree)
     }
 }
 
+// The open tree and its canvas. A cached tree can outlive its world (another world or server
+// joined): its memory still looks like a tree, but it has no canvas, and the pulse did nothing.
+// Then look the tree up again.
+uint8_t* TreeWithCanvas(uint8_t*& canvas)
+{
+    uint8_t* tree = Tree();
+    canvas = tree ? Canvas(tree) : nullptr;
+    if (canvas)
+        return tree;
+    uint8_t* fresh = FindState(kTreeHash, kTreeSize);
+    if (fresh && fresh != tree) {
+        Log("skills: the skill tree moved (another world?), using the one at %p", fresh);
+        g_tree = fresh;
+        canvas = Canvas(fresh);
+        return fresh;
+    }
+    return tree;
+}
+
 bool CallLoca(ui::Text* t, uint32_t key)
 {
     __try {
@@ -721,8 +740,8 @@ void Draw(int screen)
     }
     if (screen != kScreen)
         return;
-    uint8_t* tree = Tree();
-    uint8_t* canvas = tree ? Canvas(tree) : nullptr;
+    uint8_t* canvas = nullptr;
+    uint8_t* tree = TreeWithCanvas(canvas);
     if (!canvas)
         return;
     Frame& f = g_frame;
