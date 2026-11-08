@@ -25,6 +25,7 @@
 //           it counts as reaching the nearest glowing chest.
 #include <windows.h>
 #include <algorithm>
+#include <intrin.h>
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -44,6 +45,7 @@
 #include "log.h"
 #include "nativehighlight.h"
 #include "scan.h"
+#include "skills.h"
 #include "strings.h"
 #include "ui.h"
 
@@ -80,6 +82,7 @@ constexpr int kMaxChests = 256;
 
 constexpr int kVisibleSuggestions = 7; // the dialog shows up to 8 lines
 constexpr int kMaxSuggestions = 60;     // the list scrolls through this many
+constexpr int kMaxSkillSuggestions = 512; // the Skills page: all of them, to pick with a controller
 constexpr size_t kItemRarity = 0x17;    // ItemInfo: ItemRarity (1 uncommon .. 4 legendary)
 constexpr size_t kItemCaption = 0x58;   // ItemInfo: CaptionLocaTag, the type line ("One-Handed Axe")
 constexpr size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
@@ -148,6 +151,7 @@ enum class Kind : uint8_t {
     Item,  // one item
     Chest, // a chest's own name
     Group, // every item of a category, item type or rarity ("Consumables", "Legendary")
+    Skill, // a skill of the skill tree (Skills page): every node of that name
 };
 
 struct Entry {
@@ -164,11 +168,16 @@ struct Entry {
     std::vector<uint32_t> items; // Group: those items
     uint8_t group = 0;           // Group: what kind (GroupCategory...)
     uint8_t rarity = 0;          // Group of a rarity: which (1 uncommon .. 4 legendary)
+    std::string desc, descLower; // Skill: its description (game text, markup removed)
+    std::vector<uint32_t> nodes; // Skill: its node ids
+    bool category = false;       // Skill: a class label of the tree (Warrior, Guardian...), all its nodes
+    float centre[2] = {};        // Skill category: the middle of its nodes
 };
 
 struct Index {
     bool ok = false;
     bool inBase = false; // !ok only because the base has no storage chests
+    bool skills = false; // the Skills page: the entries are its skills
     std::string why;
     std::vector<Entry> entries;
     std::map<uint32_t, std::vector<float>> positions; // chest -> x, y, z
@@ -215,6 +224,11 @@ constexpr ULONGLONG kDoubleClickMs = 500;
 ULONGLONG g_tabAt = 0;        // the field turns Tab into a space; that space is dropped
 bool g_openPending = false;   // the hotkey was pressed; open once it is released
 constexpr ULONGLONG kTabSpaceMs = 400;
+
+int Screen();
+#ifdef FIND_DEV
+int g_devNoTip = 0;                        // @dev-tip: 1 no tip
+#endif
 
 bool GameFocused()
 {
@@ -756,6 +770,40 @@ Index BuildIndex()
     return ix;
 }
 
+// The Skills page: its skills by name, with their descriptions (the game's language).
+Index BuildSkillIndex()
+{
+    Index ix;
+    ix.skills = true;
+    g_step = "skills";
+    for (skills::Skill& s : skills::List(ix.why)) {
+        Entry e{s.name, Lower(s.name), Kind::Skill, 0, 0, {}};
+        e.desc = s.desc;
+        e.descLower = Lower(s.desc);
+        e.nodes = std::move(s.nodes);
+        ix.entries.push_back(std::move(e));
+    }
+    // The tree's categories (class labels), listed first among equal matches.
+    std::vector<Entry> categories;
+    for (skills::Category& c : skills::Categories()) {
+        Entry e{c.name, Lower(c.name), Kind::Skill, 0, 0, {}};
+        e.nodes = std::move(c.nodes);
+        e.category = true;
+        e.centre[0] = c.centre[0];
+        e.centre[1] = c.centre[1];
+        categories.push_back(std::move(e));
+    }
+    ix.entries.insert(ix.entries.begin(), std::make_move_iterator(categories.begin()), std::make_move_iterator(categories.end()));
+    ix.ok = !ix.entries.empty();
+    return ix;
+}
+
+// The skills on the Skills page, the base's chests anywhere else.
+Index BuildAny()
+{
+    return Screen() == skills::kScreen ? BuildSkillIndex() : BuildIndex();
+}
+
 // 0 exact, 1 the name starts with it, 2 a word in the name starts with it, 3 anywhere in the
 // name; -1 no match.
 int Rank(const std::string& name, const std::string& q)
@@ -783,6 +831,8 @@ void UpdateSuggestions()
     std::vector<std::pair<int, int>> ranked; // rank, entry
     for (int i = 0; i < static_cast<int>(g_index.entries.size()); ++i) {
         int r = q.empty() && g_browse ? 3 : Rank(g_index.entries[i].lower, q);
+        if (r < 0 && !q.empty() && g_index.entries[i].kind == Kind::Skill && g_index.entries[i].descLower.find(q) != std::string::npos)
+            r = 4; // a skill whose description has it
         if (r >= 0)
             ranked.push_back({r, i});
     }
@@ -792,6 +842,8 @@ void UpdateSuggestions()
             return a.first < b.first;
         const Entry& x = es[a.second];
         const Entry& y = es[b.second];
+        if (x.category != y.category)
+            return x.category;
         if (x.chests.size() != y.chests.size())
             return x.chests.size() > y.chests.size();
         if (x.total != y.total)
@@ -799,7 +851,7 @@ void UpdateSuggestions()
         return x.lower < y.lower;
     });
     g_suggested.clear();
-    for (size_t i = 0; i < ranked.size() && static_cast<int>(i) < kMaxSuggestions; ++i)
+    for (size_t i = 0; i < ranked.size() && static_cast<int>(i) < (g_index.skills ? kMaxSkillSuggestions : kMaxSuggestions); ++i)
         g_suggested.push_back(ranked[i].second);
     g_selected = -1;
     g_top = 0;
@@ -829,6 +881,39 @@ std::string Describe(const Entry& e)
     std::string name = Shorten(e.name, kMaxName);
     if (e.kind == Kind::Chest)
         return std::string(strings::Get(strings::KindChest)) + ": " + name;
+    if (e.kind == Kind::Skill && e.category)
+        return std::string(strings::Get(strings::KindCategory)) + ": " + name + " (" + std::to_string(e.nodes.size()) + ")";
+    if (e.kind == Kind::Skill) {
+        std::string line = e.nodes.size() > 1 ? name + " (" + std::to_string(e.nodes.size()) + ")" : name;
+        // Found by its description: the words around the match, the whole line short enough not
+        // to wrap (a wrapped line would push the lines below out of their rows).
+        std::string q = Lower(Trim(g_typed));
+        size_t at = q.empty() || e.lower.find(q) != std::string::npos ? std::string::npos : e.descLower.find(q);
+        if (at != std::string::npos) {
+            constexpr size_t kMaxLine = 46;
+            auto chars = [](const std::string& t) {
+                size_t n = 0;
+                for (unsigned char c : t)
+                    n += (c & 0xC0) != 0x80;
+                return n;
+            };
+            size_t used = chars(line) + 3; // the dash
+            size_t room = used + 12 < kMaxLine ? kMaxLine - used : 12;
+            size_t from = 0;
+            if (e.descLower.size() == e.desc.size() && at > 16) {
+                from = at - 16;
+                // Start at a word (within a few characters; languages without spaces start anywhere).
+                size_t space = e.desc.find(' ', from);
+                if (space != std::string::npos && space < at && space - from <= 12)
+                    from = space + 1;
+                while (from > 0 && (static_cast<unsigned char>(e.desc[from]) & 0xC0) == 0x80)
+                    --from; // not inside a character
+            }
+            static const char kEllipsis[] = "\xE2\x80\xA6";
+            line += kDash + std::string(from ? kEllipsis : "") + Shorten(e.desc.substr(from), from ? room - 1 : room);
+        }
+        return line;
+    }
     if (e.kind == Kind::Group) {
         strings::Id label = e.group == GroupRarity ? strings::KindRarity
                             : e.group == GroupPerk ? strings::KindPerk
@@ -856,11 +941,11 @@ void ShowMessage()
     if (!g_notice.empty()) {
         lines.push_back(g_notice);
     } else if (!g_index.ok) {
-        lines.push_back(strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase));
+        lines.push_back(strings::Get(g_index.skills ? strings::SkillsUnreadable : g_index.inBase ? strings::NoChests : strings::NotInBase));
     } else if (Trim(g_typed).empty() && !g_browse) {
-        lines.push_back(strings::Get(strings::TypePrompt));
+        lines.push_back(strings::Get(g_index.skills ? strings::SkillPrompt : strings::TypePrompt));
     } else if (g_suggested.empty()) {
-        lines.push_back(Format(strings::NoMatch, Trim(g_typed)));
+        lines.push_back(Format(g_index.skills ? strings::SkillNoMatch : strings::NoMatch, Trim(g_typed)));
     } else {
         int n = static_cast<int>(g_suggested.size());
         int end = (std::min)(n, g_top + kVisibleSuggestions);
@@ -1148,6 +1233,41 @@ bool DevCopy(void* to, const void* from, size_t n)
 }
 #endif
 
+// The Skills page: lights every node whose skill's name or description has the text for 5 s
+// (a picked suggestion: that skill), and with one node the view glides to it.
+constexpr unsigned kSkillPulseMs = 5000;
+bool SearchSkills(const std::string& text, const std::string& q, bool picked)
+{
+    std::vector<uint32_t> nodes;
+    std::string matched;
+    const Entry* category = nullptr; // a category named exactly so: the view glides to its middle
+    auto add = [&](const Entry& e) {
+        if (matched.size() < 600)
+            matched += (matched.empty() ? "" : ", ") + e.name + (e.category ? " (category)" : "");
+        if (e.category && e.lower == q)
+            category = &e;
+        for (uint32_t n : e.nodes)
+            if (std::find(nodes.begin(), nodes.end(), n) == nodes.end())
+                nodes.push_back(n);
+    };
+    if (picked)
+        for (const Entry& e : g_index.entries)
+            if (e.lower == q)
+                add(e);
+    if (nodes.empty())
+        for (const Entry& e : g_index.entries)
+            if (e.lower.find(q) != std::string::npos || e.descLower.find(q) != std::string::npos)
+                add(e);
+    if (nodes.empty()) {
+        g_notice = Format(strings::SkillNoMatch, Trim(text));
+        Log("find skill '%s': nothing among %zu skills", q.c_str(), g_index.entries.size());
+        return false;
+    }
+    skills::Highlight(nodes, kSkillPulseMs, category ? category->centre : nullptr);
+    Log("find skill '%s': %zu nodes light up%s: %s", q.c_str(), nodes.size(), nodes.size() == 1 ? " (centred)" : "", matched.c_str());
+    return true;
+}
+
 // Returns true when chests were found (the dialog closes), false to keep it open.
 bool Search(const std::string& text, bool picked = false)
 {
@@ -1155,11 +1275,20 @@ bool Search(const std::string& text, bool picked = false)
     if (q.empty())
         return false;
     if (!g_index.ok && q.rfind("@dev-", 0) != 0) {
-        g_notice = strings::Get(g_index.inBase ? strings::NoChests : strings::NotInBase);
+        g_notice = strings::Get(g_index.skills ? strings::SkillsUnreadable : g_index.inBase ? strings::NoChests : strings::NotInBase);
         Log("find '%s': %s", q.c_str(), g_index.why.c_str());
         return false;
     }
 #ifdef FIND_DEV
+    if (q == "@dev-tip") {
+        g_devNoTip = !g_devNoTip;
+        Log("dev: Find's tip mode %d", g_devNoTip);
+        return false;
+    }
+    if (q == "@dev-skills") {
+        skills::DevDump();
+        return false;
+    }
     if (q.rfind("@dev-types ", 0) == 0) {
         // Component type names of entities: "@dev-types 1227 1177"
         void* reg = inv::InspectRegistry(0);
@@ -1360,6 +1489,8 @@ bool Search(const std::string& text, bool picked = false)
         return true;
     }
 #endif
+    if (g_index.skills)
+        return SearchSkills(text, q, picked);
     nativehighlight::SetStressTest(false);
     std::vector<uint32_t> chests;
     std::vector<uint32_t> crafters; // NPCs and stations that make what matched
@@ -1547,6 +1678,7 @@ void Tick()
         g_chestWindowAt = 0;
     }
     if (g_hotPaused) return;
+    skills::Draw(Screen());
     char request[128]{};
     bool pending;
     AcquireSRWLockExclusive(&g_requestLock);
@@ -1568,8 +1700,8 @@ void Tick()
             }
             return;
         }
-        if (!request[0]) EndSearch();
-        else { g_index = BuildIndex(); Search(request); }
+        if (!request[0]) { EndSearch(); skills::Clear(); }
+        else { g_index = BuildAny(); Search(request); }
         return;
     }
     using namespace greeneye::input;
@@ -1582,7 +1714,7 @@ void Tick()
     g_openPad.Set(g_keys.open);
     {
         const int playing = Screen();
-        if (g_open || playing == kScreenPlaying || playing == kScreenInventory)
+        if (g_open || playing == kScreenPlaying || playing == kScreenInventory || playing == skills::kScreen)
             g_padLiveUntil = GetTickCount64() + 250;
         g_padHiddenNow = g_open ? uint16_t(PadButtons(g_keys.up) | PadButtons(g_keys.down) | PadButtons(g_keys.close) |
                                            (g_selected >= 0 ? PadButtons(g_keys.confirm) : 0))
@@ -1599,15 +1731,16 @@ void Tick()
     g_dialogTest.typing = ui::TextInputFlag();
     if (g_dialogTest.open) {
         g_dialogTest.open = false;
-        if (!g_open && (g_dialogTest.screen == kScreenPlaying || g_dialogTest.screen == kScreenInventory))
+        if (!g_open && (g_dialogTest.screen == kScreenPlaying || g_dialogTest.screen == kScreenInventory ||
+                        g_dialogTest.screen == skills::kScreen))
             g_openPending = true;
     }
 #endif
-    // Only while playing or in the inventory: not while typing in chat (43), renaming (47), a
-    // signpost (19) or any other screen, where Shift+F is just a capital F.
+    // Only while playing, in the inventory or on the Skills page: not while typing in chat (43),
+    // renaming (47), a signpost (19) or any other screen, where Shift+F is just a capital F.
     if (pressed && !g_open) {
         int screen = Screen();
-        if (screen == kScreenPlaying || screen == kScreenInventory)
+        if (screen == kScreenPlaying || screen == kScreenInventory || screen == skills::kScreen)
             g_openPending = true;
     }
     // Open when the key comes up, so its letter has already gone to the game, not the field.
@@ -1622,7 +1755,7 @@ void Tick()
         if (!g_dialog)
             g_dialog = ui::NewDialog(strings::Get(strings::Title), strings::Get(strings::Title));
         ui::ClearDialog(g_dialog);
-        g_index = BuildIndex();
+        g_index = BuildAny();
         g_lastText.clear();
         g_typed.clear();
         g_notice.clear();
@@ -1645,9 +1778,11 @@ void Tick()
             LockCamera(true);
             CatchWheel(true);
         }
+        if (g_index.skills)
+            CatchWheel(true); // the wheel scrolls the list, not the skill tree's zoom
         ShowMessage();
-        Log("search opened: %s", g_index.ok ? "index ready" : g_index.why.c_str());
-        if (g_index.ok)
+        Log("search opened%s: %s", g_index.skills ? " on the Skills page" : "", g_index.ok ? "index ready" : g_index.why.c_str());
+        if (g_index.ok && !g_index.skills)
         {
             int groups = 0;
             for (const Entry& e : g_index.entries)
@@ -1697,6 +1832,10 @@ void Tick()
     }
     if (g_openedInventory && g_screenReached && Screen() != kScreenBehindSearch && GetTickCount64() - g_openedAt > 500) {
         CloseSearch(" (screen closed)");
+        return;
+    }
+    if (g_index.skills && Screen() != skills::kScreen) {
+        CloseSearch(" (Skills page closed)");
         return;
     }
     size_t len;
@@ -2058,6 +2197,153 @@ void ProfileCommand() {
         Log("performance profile: saved %u HUD frame intervals",g_profileCount);
     }
 }
+// --- Find's tip in the game's hint bar, on the Skills page ---
+//
+// 140ce8da0 doActionHints(span{entries, count}, options) draws the bar at the bottom of a menu
+// screen; doPlayStateUi calls it for the menu screens. Each 0x48-byte entry is drawn by
+// 140ce85b0 doActionHint(entry, params): +0x00 u8 input action (its key glyph comes from the
+// action's binding record, *(G + 0xd0) + 0x10 + 0xf26c + action * 0xc4), +0x1a bit 2 shown,
+// +0x1b: use the text at +0x20. The screens call the bar from six places. On the Skills page Find adds "<Shift+F> Find" first: a copy of an
+// entry the page shows, its action's record saying Find's key and button while that one entry
+// draws (as Quick Deposit's tips do; common/game_hints.h). Only calls are redirected (the
+// screens' calls of the bar, the bar's call of the entry), not the functions.
+struct HintSpan {
+    uint8_t* data;
+    uint64_t count;
+};
+using HintBarFn = void (*)(HintSpan* span, void* options);
+using HintEntryFn = uint64_t (*)(uint8_t* entry, void* params);
+HintBarFn g_originalHintBar = nullptr;
+HintEntryFn g_originalHintEntry = nullptr;
+constexpr size_t kHintEntry = 0x48;
+constexpr int kMaxHintEntries = 16;
+constexpr size_t kUiBindings = 0x10 + 0xf26c;
+alignas(16) uint8_t g_hintEntries[(kMaxHintEntries + 1) * kHintEntry];
+uint8_t* g_findTip = nullptr; // Find's entry while the bar draws
+ui::Text g_findTipText{};
+
+uint8_t* ActionRecord(uint8_t action)
+{
+    auto* g = static_cast<uint8_t*>(ui::G());
+    uint8_t* u = g ? *reinterpret_cast<uint8_t**>(g + 0xd0) : nullptr;
+    return u && *reinterpret_cast<void**>(u) ? u + kUiBindings + action * greeneye::hints::kRecordSize : nullptr;
+}
+
+void HintBarBody(HintSpan* span, void* options)
+{
+    g_findTip = nullptr;
+    const bool pad = greeneye::hints::PadInUse();
+#ifdef FIND_DEV
+    if (g_devNoTip) {
+        g_originalHintBar(span, options);
+        return;
+    }
+#endif
+    // The page draws two bars in one place on alternate frames: its own (Zoom, Close) and one
+    // with only Close. Their entries share the bar's widgets, so a tip in only one of them
+    // flickers and mixes the other's up: both frames get the page's own bar, with the tip.
+    static uint8_t page[kMaxHintEntries * kHintEntry]; // the page's own bar, as it last drew
+    static uint64_t pageCount = 0;
+    static ULONGLONG pageAt = 0;
+    const ULONGLONG now = GetTickCount64();
+    if (g_open || Screen() != skills::kScreen || !span || !span->data || !span->count || span->count >= kMaxHintEntries ||
+        !greeneye::hints::ShowsOn(g_keys.open, pad)) {
+        g_originalHintBar(span, options);
+        return;
+    }
+    if (span->count >= 2) {
+        memcpy(page, span->data, span->count * kHintEntry);
+        pageCount = span->count;
+        pageAt = now;
+    }
+    const uint8_t* entries = span->data;
+    uint64_t count = span->count;
+    if (count < 2 && pageCount && now - pageAt < 500) { // the Close-only frame
+        entries = page;
+        count = pageCount;
+    }
+    // A shown, enabled entry with a keyboard key to copy (the page's Close; its Zoom is the
+    // mouse wheel, drawn differently).
+    int model = -1;
+    for (uint64_t i = 0; i < count && model < 0; ++i) {
+        const uint8_t* record = ActionRecord(entries[i * kHintEntry]);
+        if ((entries[i * kHintEntry + 0x1a] & 7) == 7 && record && record[0] == 1)
+            model = static_cast<int>(i);
+    }
+    if (model < 0) {
+        g_originalHintBar(span, options);
+        return;
+    }
+    // Last, after Close.
+    memcpy(g_hintEntries, entries, count * kHintEntry);
+    uint8_t* tip = g_hintEntries + count * kHintEntry;
+    memcpy(tip, entries + model * kHintEntry, kHintEntry);
+    g_findTipText = ui::MakeText(strings::Get(strings::Title));
+    memcpy(tip + 0x20, &g_findTipText, sizeof(g_findTipText));
+    tip[0x1b] = 1;
+    HintSpan mine{g_hintEntries, count + 1};
+    g_findTip = tip;
+    g_originalHintBar(&mine, options);
+    g_findTip = nullptr;
+}
+
+void HintBarHook(HintSpan* span, void* options)
+{
+    hot::Lease lease;
+    if (!lease || g_hotPaused)
+        return g_originalHintBar(span, options);
+    HintBarBody(span, options);
+    if (Screen() == skills::kScreen)
+        skills::DrawInPage(); // the pulse inside the page, under its node card
+}
+
+uint64_t HintEntryHook(uint8_t* entry, void* params)
+{
+    hot::Lease lease;
+    uint8_t* record = lease && entry && entry == g_findTip ? ActionRecord(entry[0]) : nullptr;
+    if (!record)
+        return g_originalHintEntry(entry, params);
+    // The copied action shows Find's key and button for this one entry.
+    uint8_t saved[greeneye::hints::kRecordSize];
+    memcpy(saved, record, sizeof(saved));
+    greeneye::hints::WriteRecord(record, g_keys.open);
+    uint64_t result = g_originalHintEntry(entry, params);
+    memcpy(record, saved, sizeof(saved));
+    return result;
+}
+
+// Redirects the screens' calls of the hint bar and the bar's call of an entry. Optional.
+void HookHintBar()
+{
+    uint8_t* bar = FindUnique("48 89 5C 24 20 55 56 57 41 54 41 55 48 8D 6C 24 C9 48 81 EC B0 00 00 00");
+    uint8_t* entry = FindUnique("48 8B C4 55 56 57 41 56 48 8D A8 D8 FD FF FF 48 81 EC 08 03 00 00 F6 41 1A 04");
+    uint8_t* calls[128];
+    int barCalls = 0, entryCalls = 0;
+    if (bar && entry) {
+        int n = CallsTo(entry, calls, 128);
+        for (int i = 0; i < n; ++i)
+            if (calls[i] > bar && calls[i] < bar + 0x300)
+                if (void* on = RedirectCall(calls[i], reinterpret_cast<void*>(&HintEntryHook))) {
+                    g_originalHintEntry = reinterpret_cast<HintEntryFn>(on);
+                    ++entryCalls;
+                }
+        if (g_originalHintEntry) {
+            // Every screen's call of the bar (six in this build); Find only adds to the Skills page's.
+            n = CallsTo(bar, calls, 128);
+            for (int i = 0; i < n && n <= 16; ++i)
+                    if (void* on = RedirectCall(calls[i], reinterpret_cast<void*>(&HintBarHook))) {
+                        g_originalHintBar = reinterpret_cast<HintBarFn>(on);
+                        ++barCalls;
+                    }
+        }
+    }
+    skills::UsePageDrawing(barCalls >= 1);
+    if (barCalls >= 1 && entryCalls == 1)
+        Log("hint bar: Find's tip on the Skills page (%d screen calls)", barCalls);
+    else
+        Log("hint bar: not as expected (bar %p %d, entry %p %d) - no tip on the Skills page", bar, barCalls, entry, entryCalls);
+}
+
 void SpatialMarkersHookBody(void* state, void* arg);
 void SpatialMarkersHook(void* state, void* arg)
 {
@@ -2157,6 +2443,7 @@ bool Init(const Config& config)
     g_arrivedMeters = config.glow.nearMeters;
     g_afterArrivalMs = static_cast<ULONGLONG>(config.glow.nearSeconds * 1000.0f);
     g_nativeReady = nativehighlight::Init();
+    skills::Init(); // optional: Find on the Skills page
     uint8_t* playState = FindUnique("4C 8B DC 55 49 8D AB E8 FD FF FF 48 81 EC 10 03 00 00");
     if (!playState) {
         // Auto Loot (18-byte jump) or Creative Mode (safetyhook) may have hooked it already:
@@ -2184,6 +2471,7 @@ bool Init(const Config& config)
         Log("hooks: could not patch the game");
         return false;
     }
+    HookHintBar();
     // UiDispatch, called as it is (Quick Deposit may have hooked it; its jump leads on).
     g_dispatch = reinterpret_cast<UiDispatchFn>(FindUnique("4C 8B DC 55 56 57 49 8D AB 18 FF FF FF 48 81 EC D0 01 00 00"));
     if (!g_dispatch) {

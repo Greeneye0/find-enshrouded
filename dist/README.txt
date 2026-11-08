@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.10
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.11
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -45,6 +45,14 @@ USE
 
 Find opens only while you play or have your backpack open, never while you type in chat,
 rename something or write on a signpost.
+
+
+THE SKILL TREE
+--------------
+On the Skills page, Shift+F (LB+X on a controller) searches the skill tree instead of your
+chests. Type part of a skill's name or of what it does, in the game's language; categories
+such as Guardian are listed too. The skills found pulse gold for 5 seconds, and a single
+match brings the view to it. Esc closes only the search.
 
 
 WHAT YOU CAN SEARCH FOR
@@ -105,6 +113,14 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.11
+- Find searches the skill tree too: open the Skills page and press Shift+F (LB+X on a
+  controller), then type part of a skill's name or of what it does, in your game's language.
+  The skills found pulse gold for 5 seconds, and a single match brings the view to it.
+- Categories are listed as well, such as Category: Guardian (19). Finding one lights that
+  whole part of the tree.
+- The Skills page's tip bar shows the Find key, and Esc there closes only the search.
+
 1.2.10
 - The Worst Map Mod's Find box works with Find again: with Find 1.2.9 installed, its list
   couldn't be hovered or clicked, and Tab typed a space. Update the map to 1.3.41 as well.

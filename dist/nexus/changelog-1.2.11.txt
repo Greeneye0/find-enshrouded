@@ -1,0 +1,3 @@
+- Find searches the skill tree too: open the Skills page and press Shift+F (LB+X on a controller), then type part of a skill's name or of what it does, in your game's language. The skills found pulse gold for 5 seconds, and a single match brings the view to it.
+- Categories are listed as well, such as Category: Guardian (19). Finding one lights that whole part of the tree.
+- The Skills page's tip bar shows the Find key, and Esc there closes only the search.

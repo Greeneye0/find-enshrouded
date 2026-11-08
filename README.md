@@ -33,6 +33,13 @@ servers and other players need nothing. Find only reads your chests; it never mo
    or open it; every pulse ends after three minutes, with your next search, or when you leave
    the base.
 
+## The skill tree
+
+On the Skills page, **Shift+F** (LB+X on a controller) searches the skill tree instead of your
+chests. Type part of a skill's name or of what it does, in the game's language; categories such
+as `Guardian` are listed too. The skills found pulse gold for 5 seconds, and a single match
+brings the view to it. Esc closes only the search.
+
 ## Settings
 
 `find.ini` (written with the defaults on the first start; settings an older `find.ini` lacks

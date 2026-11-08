@@ -26,6 +26,9 @@ enum Id {
     MadeHere,       // an item no chest holds that an NPC or station of the base makes
     MadeHereLocked, // the same, but the recipe isn't unlocked yet
     PlacedHere,     // an item that stands in the base (a station, bed, torch...)
+    SkillPrompt,    // the Skills page: shown before anything is typed
+    SkillNoMatch,   // the Skills page: %s, what was typed
+    SkillsUnreadable, // the Skills page: its skills can't be read (game data not found)
     Count
 };
 

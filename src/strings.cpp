@@ -29,7 +29,8 @@ const char* const kTexts[LangCount][Count] = {
      T("This base has no storage chests to search."),
      T("can be made here"),
      T("made here, not unlocked yet"),
-     T("placed here")},
+     T("placed here"),
+     T("Type a skill name or part of what it does."), T("No skill name or description matches \"%s\"."), T("The skill tree can't be read right now.")},
     // De
     {T("Suchen"), T("Gegenstand, Truhenname oder Art eingeben: Kategorie, Seltenheit, Perk."),
      T("Stell dich in eine deiner Basen, um ihre Truhen zu durchsuchen."),
@@ -39,7 +40,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Diese Basis hat keine Truhen zum Durchsuchen."),
      T("kann hier hergestellt werden"),
      T("wird hier hergestellt, noch nicht freigeschaltet"),
-     T("hier aufgestellt")},
+     T("hier aufgestellt"),
+     T("Namen einer Fähigkeit oder einen Teil ihrer Wirkung eingeben."), T("Keine Fähigkeit passt zu \"%s\"."), T("Der Fähigkeitenbaum kann gerade nicht gelesen werden.")},
     // Fr
     {T("Chercher"), T("Saisissez un objet, un nom de coffre ou un type : catégorie, rareté, atout."),
      T("Placez-vous dans l'une de vos bases pour fouiller ses coffres."),
@@ -49,7 +51,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Cette base n'a aucun coffre à fouiller."),
      T("fabricable ici"),
      T("fabriqué ici, pas encore débloqué"),
-     T("placé ici")},
+     T("placé ici"),
+     T("Saisissez le nom d'une compétence ou une partie de son effet."), T("Aucune compétence ne correspond à « %s »."), T("L'arbre de compétences ne peut pas être lu pour le moment.")},
     // Es
     {T("Buscar"), T("Escribe un objeto, el nombre de un cofre o un tipo: categoría, rareza, ventaja."),
      T("Colócate dentro de una de tus bases para buscar en sus cofres."),
@@ -59,7 +62,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Esta base no tiene cofres en los que buscar."),
      T("se puede fabricar aquí"),
      T("se fabrica aquí, aún no desbloqueado"),
-     T("colocado aquí")},
+     T("colocado aquí"),
+     T("Escribe el nombre de una habilidad o parte de su efecto."), T("Ninguna habilidad coincide con \"%s\"."), T("Ahora mismo no se puede leer el árbol de habilidades.")},
     // It
     {T("Cerca"), T("Scrivi un oggetto, il nome di una cassa o un tipo: categoria, rarità, vantaggio."),
      T("Mettiti dentro una delle tue basi per cercare nelle sue casse."),
@@ -69,7 +73,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Questa base non ha casse in cui cercare."),
      T("si può fabbricare qui"),
      T("si fabbrica qui, non ancora sbloccato"),
-     T("piazzato qui")},
+     T("piazzato qui"),
+     T("Scrivi il nome di un'abilità o parte del suo effetto."), T("Nessuna abilità corrisponde a \"%s\"."), T("Al momento non è possibile leggere l'albero delle abilità.")},
     // Pt
     {T("Buscar"), T("Digite um item, o nome de um baú ou um tipo: categoria, raridade, vantagem."),
      T("Fique dentro de uma das suas bases para procurar nos baús dela."),
@@ -79,7 +84,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Esta base não tem baús onde procurar."),
      T("pode ser fabricado aqui"),
      T("fabricado aqui, ainda não desbloqueado"),
-     T("colocado aqui")},
+     T("colocado aqui"),
+     T("Digite o nome de uma habilidade ou parte do seu efeito."), T("Nenhuma habilidade corresponde a \"%s\"."), T("Não é possível ler a árvore de habilidades agora.")},
     // Pl
     {T("Szukaj"), T("Wpisz przedmiot, nazwę skrzyni lub rodzaj: kategoria, rzadkość, atut."),
      T("Stań w jednej ze swoich baz, aby przeszukać jej skrzynie."),
@@ -89,7 +95,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Ta baza nie ma skrzyń do przeszukania."),
      T("można tu wytworzyć"),
      T("wytwarzane tutaj, jeszcze nie odblokowane"),
-     T("postawione tutaj")},
+     T("postawione tutaj"),
+     T("Wpisz nazwę umiejętności lub część jej działania."), T("Żadna umiejętność nie pasuje do „%s”."), T("Nie można teraz odczytać drzewka umiejętności.")},
     // Ru
     {T("Найти"), T("Введите предмет, название сундука или вид: категория, редкость, перк."),
      T("Встаньте в одной из своих баз, чтобы искать в её сундуках."),
@@ -99,7 +106,8 @@ const char* const kTexts[LangCount][Count] = {
      T("В этой базе нет сундуков для поиска."),
      T("можно изготовить здесь"),
      T("изготавливается здесь, ещё не открыто"),
-     T("установлено здесь")},
+     T("установлено здесь"),
+     T("Введите название навыка или часть его эффекта."), T("Ни один навык не подходит под «%s»."), T("Сейчас не удаётся прочитать древо навыков.")},
     // Uk
     {T("Знайти"), T("Введіть предмет, назву скрині або вид: категорія, рідкісність, перк."),
      T("Станьте в одній зі своїх баз, щоб шукати в її скринях."),
@@ -109,7 +117,8 @@ const char* const kTexts[LangCount][Count] = {
      T("У цій базі немає скринь для пошуку."),
      T("можна виготовити тут"),
      T("виготовляється тут, ще не відкрито"),
-     T("встановлено тут")},
+     T("встановлено тут"),
+     T("Введіть назву навички або частину її ефекту."), T("Жодна навичка не відповідає «%s»."), T("Зараз не вдається прочитати дерево навичок.")},
     // Ja
     {T("検索"), T("アイテム名、チェスト名、または種類（カテゴリー・レア度・パーク）を入力してください。"),
      T("拠点の中に立つと、その拠点のチェストを検索できます。"), T("この拠点には「%s」に一致するものがありません。"),
@@ -119,7 +128,8 @@ const char* const kTexts[LangCount][Count] = {
      T("この拠点には検索できるチェストがありません。"),
      T("ここで作れます"),
      T("ここで作れます（まだ未解放）"),
-     T("ここに設置済み")},
+     T("ここに設置済み"),
+     T("スキル名、または効果の一部を入力してください。"), T("「%s」に一致するスキルはありません。"), T("現在スキルツリーを読み取れません。")},
     // Ko
     {T("찾기"), T("아이템, 상자 이름 또는 종류(카테고리, 등급, 특성)를 입력하세요."),
      T("자신의 기지 안에 서야 그 기지의 상자를 검색할 수 있습니다."), T("이 기지에는 \"%s\"와(과) 일치하는 것이 없습니다."),
@@ -128,7 +138,8 @@ const char* const kTexts[LangCount][Count] = {
      T("이 기지에는 검색할 상자가 없습니다."),
      T("여기서 제작 가능"),
      T("여기서 제작 가능 (아직 잠김)"),
-     T("여기에 설치됨")},
+     T("여기에 설치됨"),
+     T("스킬 이름이나 효과의 일부를 입력하세요."), T("\"%s\"와(과) 일치하는 스킬이 없습니다."), T("지금은 스킬 트리를 읽을 수 없습니다.")},
     // Zh
     {T("查找"), T("输入物品、箱子名称或类别：分类、稀有度、特性。"), T("站在你的某个基地内才能搜索其箱子。"),
      T("此基地中没有与“%s”匹配的内容。"), T("Tab / Shift+Tab  选择     点击  选择     Enter  查找"), T("Enter / Esc  关闭"),
@@ -136,7 +147,8 @@ const char* const kTexts[LangCount][Count] = {
      T("此基地中没有可搜索的箱子。"),
      T("可在此制作"),
      T("可在此制作（尚未解锁）"),
-     T("已放置在此")},
+     T("已放置在此"),
+     T("输入技能名称或其效果的一部分。"), T("没有与“%s”匹配的技能。"), T("目前无法读取技能树。")},
     // Tr
     {T("Bul"), T("Bir eşya, sandık adı ya da tür yazın: kategori, nadirlik, yetenek."),
      T("Sandıklarını aramak için üslerinden birinin içinde dur."), T("Bu üste \"%s\" ile eşleşen bir şey yok."),
@@ -145,7 +157,8 @@ const char* const kTexts[LangCount][Count] = {
      T("Bu üste aranacak sandık yok."),
      T("burada üretilebilir"),
      T("burada üretilir, henüz açılmadı"),
-     T("burada yerleştirilmiş")},
+     T("burada yerleştirilmiş"),
+     T("Bir beceri adı ya da etkisinin bir kısmını yazın."), T("\"%s\" ile eşleşen bir beceri yok."), T("Beceri ağacı şu anda okunamıyor.")},
 };
 
 // Plural forms: 0 one, 1 few, 2 many (en-like languages use 0 and 2).
