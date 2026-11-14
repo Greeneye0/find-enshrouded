@@ -43,6 +43,7 @@
 #include "find.h"
 #include "inventory.h"
 #include "log.h"
+#include "match.h"
 #include "nativehighlight.h"
 #include "scan.h"
 #include "skills.h"
@@ -222,6 +223,10 @@ ULONGLONG g_clickAt = 0;       // the last click on a suggestion
 int g_hover = -1;              // the suggestion under the mouse
 constexpr ULONGLONG kDoubleClickMs = 500;
 ULONGLONG g_tabAt = 0;        // the field turns Tab into a space; that space is dropped
+bool g_exact = false;         // Exact match (find.ini exact_match): no matching by words
+bool g_exactKeyDown = false;
+int g_hiddenByExact = 0;      // results Exact match leaves out of the list
+ULONGLONG g_exactAt = 0;      // Ctrl+E may type an e into the field; dropped like Tab's space
 bool g_openPending = false;   // the hotkey was pressed; open once it is released
 constexpr ULONGLONG kTabSpaceMs = 400;
 
@@ -344,6 +349,7 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
     if (!magic.empty()) {
         if (!inv::Ready(playerId, magic.data(), static_cast<int>(magic.size())))
             return true;
+        inv::DetectPosition(playerId, pos); // once the registry is known; before anything goes by position
         // The altar lists planted bushes too. Left in, they glowed as chests, and as "magic
         // chests" they let crafting stations past KeepStorageChests.
         magic.resize(inv::DropPlants(client, magic.data(), static_cast<int>(magic.size())));
@@ -352,7 +358,10 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
     if (magic.empty()) {
         // A small flame altar lists no crafting-storage chests: find the plain chests themselves.
         std::vector<uint32_t> plain(kMaxChests);
-        int np = !inv::Ready(playerId, nullptr, 0) ? 0 : inv::FindPlainChests(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), plain.data(), kMaxChests);
+        bool ready = inv::Ready(playerId, nullptr, 0);
+        if (ready)
+            inv::DetectPosition(playerId, pos);
+        int np = !ready ? 0 : inv::FindPlainChests(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), plain.data(), kMaxChests);
         np = inv::DropPlants(client, plain.data(), np);
         out.assign(plain.begin(), plain.begin() + np);
         if (out.empty()) {
@@ -597,6 +606,7 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
     }
     bool knows = knowledge::Refresh(recipes::IsRecipe);
     std::map<size_t, bool> unlocked; // entries with crafters: whether one of them can make it
+    std::map<size_t, std::vector<uint32_t>> recipeIds; // ...and the recipes that would
     std::vector<inv::Crafter> crafters(256);
     int n = inv::FindCrafters(g_baseLo, g_baseHi, recipes::IsWorkshop, crafters.data(), static_cast<int>(crafters.size()));
     for (int c = 0; c < n; ++c) {
@@ -621,13 +631,21 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
                 list.push_back(crafters[c].entity);
             bool& can = unlocked[it->second];
             const std::vector<uint32_t>* ids = recipes::RecipeIds(crafters[c].workshop, (*makes)[i]);
-            for (size_t r = 0; !can && ids && r < ids->size(); ++r)
-                can = knowledge::Known((*ids)[r]);
+            for (size_t r = 0; ids && r < ids->size(); ++r) {
+                can = can || knowledge::Known((*ids)[r]);
+                recipeIds[it->second].push_back((*ids)[r]);
+            }
         }
     }
-    // Without the player's knowledge nothing is called locked.
-    for (auto& [entry, can] : unlocked)
+    // Without the player's knowledge nothing is called locked. Before something is, the knowledge is read again
+    // in full if it may be stale (a recipe learned since the arrays were found).
+    for (auto& [entry, can] : unlocked) {
+        if (knows && !can)
+            for (uint32_t id : recipeIds[entry])
+                if ((can = knowledge::KnownAfterRescan(id, recipes::IsRecipe)))
+                    break;
         ix.entries[entry].locked = knows && !can;
+    }
 }
 
 // What stands in the base lights up for its own name: searching "oven" finds the ovens placed
@@ -804,35 +822,26 @@ Index BuildAny()
     return Screen() == skills::kScreen ? BuildSkillIndex() : BuildIndex();
 }
 
-// 0 exact, 1 the name starts with it, 2 a word in the name starts with it, 3 anywhere in the
-// name; -1 no match.
-int Rank(const std::string& name, const std::string& q)
-{
-    if (q.empty())
-        return -1;
-    if (name == q)
-        return 0;
-    size_t at = name.find(q);
-    if (at == std::string::npos)
-        return -1;
-    if (at == 0)
-        return 1;
-    for (; at != std::string::npos; at = name.find(q, at + 1)) {
-        char before = name[at - 1];
-        if (!isalnum(static_cast<unsigned char>(before)))
-            return 2;
-    }
-    return 3;
-}
+using match::Rank;
 
 void UpdateSuggestions()
 {
     std::string q = Lower(Trim(g_typed));
+    const std::vector<std::string> words = match::Words(q);
+    int hidden = 0;
     std::vector<std::pair<int, int>> ranked; // rank, entry
     for (int i = 0; i < static_cast<int>(g_index.entries.size()); ++i) {
-        int r = q.empty() && g_browse ? 3 : Rank(g_index.entries[i].lower, q);
-        if (r < 0 && !q.empty() && g_index.entries[i].kind == Kind::Skill && g_index.entries[i].descLower.find(q) != std::string::npos)
+        const Entry& e = g_index.entries[i];
+        int r = q.empty() && g_browse ? 3 : Rank(e.lower, q);
+        if (r < 0 && !q.empty() && e.kind == Kind::Skill && e.descLower.find(q) != std::string::npos)
             r = 4; // a skill whose description has it
+        if (r < 0) {
+            int w = match::WordsRank(e.lower, e.descLower, words);
+            if (!g_exact)
+                r = w;
+            else if (w >= 0)
+                ++hidden;
+        } // "ring mana": Ring of Mana, then names with some words
         if (r >= 0)
             ranked.push_back({r, i});
     }
@@ -850,6 +859,7 @@ void UpdateSuggestions()
             return x.total > y.total;
         return x.lower < y.lower;
     });
+    g_hiddenByExact = hidden;
     g_suggested.clear();
     for (size_t i = 0; i < ranked.size() && static_cast<int>(i) < (g_index.skills ? kMaxSkillSuggestions : kMaxSuggestions); ++i)
         g_suggested.push_back(ranked[i].second);
@@ -889,6 +899,10 @@ std::string Describe(const Entry& e)
         // to wrap (a wrapped line would push the lines below out of their rows).
         std::string q = Lower(Trim(g_typed));
         size_t at = q.empty() || e.lower.find(q) != std::string::npos ? std::string::npos : e.descLower.find(q);
+        if (at == std::string::npos && !q.empty() && e.lower.find(q) == std::string::npos)
+            for (const std::string& w : match::Words(q)) // found by its words: the first one the name lacks
+                if (e.lower.find(w) == std::string::npos && (at = e.descLower.find(w)) != std::string::npos)
+                    break;
         if (at != std::string::npos) {
             constexpr size_t kMaxLine = 46;
             auto chars = [](const std::string& t) {
@@ -945,7 +959,10 @@ void ShowMessage()
     } else if (Trim(g_typed).empty() && !g_browse) {
         lines.push_back(strings::Get(g_index.skills ? strings::SkillPrompt : strings::TypePrompt));
     } else if (g_suggested.empty()) {
-        lines.push_back(Format(g_index.skills ? strings::SkillNoMatch : strings::NoMatch, Trim(g_typed)));
+        std::string line = Format(g_index.skills ? strings::SkillNoMatch : strings::NoMatch, Trim(g_typed));
+        if (g_exact && g_hiddenByExact > 0) // what unticking Exact match would show
+            line += " " + strings::HiddenCount(g_hiddenByExact);
+        lines.push_back(line);
     } else {
         int n = static_cast<int>(g_suggested.size());
         int end = (std::min)(n, g_top + kVisibleSuggestions);
@@ -1012,7 +1029,7 @@ void ShowTips()
             add(closing[0], g_keys.close);
         } else {
             add(open[0], g_keys.next);
-            add(open[1], MakeBinding("Mouse1"));
+            add(open[2], MakeBinding("Mouse1")); // a click finds
             add(open[2], g_keys.confirm);
         }
     }
@@ -1233,6 +1250,43 @@ bool DevCopy(void* to, const void* from, size_t n)
 }
 #endif
 
+// Switches Exact match (the dialog's checkbox, its key or button) and remembers it in find.ini.
+void ToggleExact(bool byKey)
+{
+    g_exact = !g_exact;
+    if (byKey)
+        g_exactAt = GetTickCount64();
+    SaveExactMatch(g_exact);
+    Log("search: exact match %s", g_exact ? "on" : "off");
+    g_notice.clear();
+    if (!Trim(g_typed).empty())
+        UpdateSuggestions();
+    ShowMessage();
+}
+
+// Text of several words that matches nothing as a whole: every entry with all the words, else
+// the entries with the most of them (as the list ranks them).
+template <class Add>
+void AddByWords(const std::string& q, bool withDesc, Add&& add)
+{
+    const std::vector<std::string> words = match::Words(q);
+    if (words.size() < 2)
+        return;
+    std::vector<int> ranks;
+    int best = -1;
+    for (const Entry& e : g_index.entries) {
+        int r = match::WordsRank(e.lower, withDesc ? e.descLower : std::string(), words);
+        ranks.push_back(r);
+        if (r >= 0 && (best < 0 || r < best))
+            best = r;
+    }
+    if (best < 0)
+        return;
+    for (size_t i = 0; i < ranks.size(); ++i)
+        if (ranks[i] >= 0 && (match::IsAll(best) ? match::IsAll(ranks[i]) : ranks[i] == best))
+            add(g_index.entries[i]);
+}
+
 // The Skills page: lights every node whose skill's name or description has the text for 5 s
 // (a picked suggestion: that skill), and with one node the view glides to it.
 constexpr unsigned kSkillPulseMs = 5000;
@@ -1258,6 +1312,8 @@ bool SearchSkills(const std::string& text, const std::string& q, bool picked)
         for (const Entry& e : g_index.entries)
             if (e.lower.find(q) != std::string::npos || e.descLower.find(q) != std::string::npos)
                 add(e);
+    if (nodes.empty() && !g_exact)
+        AddByWords(q, true, add);
     if (nodes.empty()) {
         g_notice = Format(strings::SkillNoMatch, Trim(text));
         Log("find skill '%s': nothing among %zu skills", q.c_str(), g_index.entries.size());
@@ -1280,6 +1336,25 @@ bool Search(const std::string& text, bool picked = false)
         return false;
     }
 #ifdef FIND_DEV
+    if (q == "@dev-detect") {
+        // Runs the Inventory/Position type detection anywhere (no base needed) and names the types.
+        void* client = GameClient();
+        uint32_t handle = client ? At<uint32_t>(client, kClientPlayer) : 0;
+        uint32_t playerId = handle ? (handle & 0x3f) + 1 : 0;
+        float pos[3] = {};
+        bool ready = playerId && PlayerPosition(pos) && inv::Ready(playerId, nullptr, 0);
+        if (ready)
+            inv::DetectPosition(playerId, pos);
+        void* reg = inv::InspectRegistry(0);
+        char posName[96] = "?", invName[96] = "?";
+        if (reg) {
+            ecs::Name(reg, inv::TypePosition(), posName, sizeof(posName));
+            ecs::Name(reg, inv::TypeInventory(), invName, sizeof(invName));
+        }
+        Log("dev detect: ready %d, Position type %u = %s, Inventory type %u = %s", ready, inv::TypePosition(), posName,
+            inv::TypeInventory(), invName);
+        return false;
+    }
     if (q == "@dev-tip") {
         g_devNoTip = !g_devNoTip;
         Log("dev: Find's tip mode %d", g_devNoTip);
@@ -1384,6 +1459,15 @@ bool Search(const std::string& text, bool picked = false)
             for (int b = 0; b < 16; ++b) sprintf_s(hex + b * 3, 4, "%02x ", raw[b]);
             Log("dev data %u/%u +%03x: %s", id, type, off, hex);
         }
+        return false;
+    }
+    if (q.rfind("@dev-recipe ", 0) == 0) {
+        // Every recipe of the items named so: "@dev-recipe coconut milk"
+        std::string name = q.substr(12);
+        knowledge::Refresh(recipes::IsRecipe);
+        for (const Entry& e : g_index.entries)
+            if (e.kind == Kind::Item && e.lower == name)
+                recipes::DevDescribe(e.itemId, knowledge::Known);
         return false;
     }
     if (q.rfind("@dev-placed ", 0) == 0) {
@@ -1537,6 +1621,8 @@ bool Search(const std::string& text, bool picked = false)
             for (const Entry& e : g_index.entries)
                 if (e.lower.find(q) != std::string::npos)
                     add(e);
+        if (chests.empty() && crafters.empty() && placed.empty() && !g_exact)
+            AddByWords(q, false, add);
     }
     if (chests.empty() && crafters.empty() && placed.empty()) {
         g_notice = Format(strings::NoMatch, Trim(text));
@@ -1716,7 +1802,7 @@ void Tick()
         const int playing = Screen();
         if (g_open || playing == kScreenPlaying || playing == kScreenInventory || playing == skills::kScreen)
             g_padLiveUntil = GetTickCount64() + 250;
-        g_padHiddenNow = g_open ? uint16_t(PadButtons(g_keys.up) | PadButtons(g_keys.down) | PadButtons(g_keys.close) |
+        g_padHiddenNow = g_open ? uint16_t(PadButtons(g_keys.up) | PadButtons(g_keys.down) | PadButtons(g_keys.close) | PadButtons(g_keys.exact) |
                                            (g_selected >= 0 ? PadButtons(g_keys.confirm) : 0))
                                 : uint16_t(0);
     }
@@ -1845,6 +1931,7 @@ void Tick()
     // typed) and Enter closes.
     if (!g_index.ok) {
         ui::DisableDialogField();
+        ui::SetDialogCheckbox(g_dialog, false, g_exact, "", g_keys.exact);
         if (r == 2 || Edge(4, focused && (KeysHeld(g_keys.confirm, held) || PadHeld(g_keys.confirm, pad)))) {
             CloseSearch(" (not in a base)");
             return;
@@ -1870,6 +1957,13 @@ void Tick()
         ShowMessage();
         return;
     }
+    // Exact match: the checkbox after the tips (a click, below), Ctrl+E or Y.
+    bool exactKey = focused && KeysHeld(g_keys.exact, held);
+    bool exactPressed = (exactKey && !g_exactKeyDown) || (focused && PadPressed(g_keys.exact, padPressed, pad));
+    g_exactKeyDown = exactKey;
+    if (exactPressed)
+        ToggleExact(exactKey);
+    ui::SetDialogCheckbox(g_dialog, true, g_exact, strings::Get(strings::ExactMatch), g_keys.exact);
     bool next = Edge(0, focused && KeysHeld(g_keys.next, held)) || (focused && PadPressed(g_keys.next, padPressed, pad));
     bool previous = Edge(5, focused && KeysHeld(g_keys.previous, held)) || (focused && PadPressed(g_keys.previous, padPressed, pad));
     bool padStep = focused && (PadPressed(g_keys.up, padPressed, pad) || PadPressed(g_keys.down, padPressed, pad));
@@ -1886,6 +1980,11 @@ void Tick()
     if (text != g_lastText && now - g_tabAt < kTabSpaceMs && text.size() == g_lastText.size() + 1 &&
         text.compare(0, g_lastText.size(), g_lastText) == 0 && isspace(static_cast<unsigned char>(text.back()))) {
         ui::SetDialogText(g_dialog, g_lastText); // the space Tab typed
+        text = g_lastText;
+    }
+    if (text != g_lastText && now - g_exactAt < kTabSpaceMs && text.size() == g_lastText.size() + 1 &&
+        text.compare(0, g_lastText.size(), g_lastText) == 0 && (text.back() == 'e' || text.back() == 'E')) {
+        ui::SetDialogText(g_dialog, g_lastText); // the e of Ctrl+E
         text = g_lastText;
     }
     if (text != g_lastText) { // typed
@@ -1914,6 +2013,10 @@ void Tick()
     // The mouse: the line under it is marked; a click picks it, a second click on it finds.
     bool click = Edge(3, focused && held(VK_LBUTTON));
     float mx, my;
+    if (click && ui::CursorInUi(mx, my) && ui::DialogCheckboxAt(g_dialog, mx, my)) {
+        ToggleExact(false);
+        click = false;
+    }
     int shown = (std::min)(n - g_top, kVisibleSuggestions);
     int under = -1;
     if (shown > 0 && g_notice.empty() && ui::CursorInUi(mx, my)) {
@@ -1938,22 +2041,16 @@ void Tick()
         ShowMessage();
     }
     if (click && under >= 0) {
+        // One click finds it (choosing first and then clicking again was one click too many).
         int index = under;
-        {
-            if (index == g_selected && now - g_clickAt < kDoubleClickMs) {
-                g_clickAt = 0;
-                std::string name = g_index.entries[g_suggested[index]].name;
-                if (Search(name, true)) {
-                    CloseSearch(" (picked with the mouse)");
-                    return;
-                }
-                ShowMessage();
-            } else {
-                Select(index);
-                ShowMessage();
-                g_clickAt = now;
-            }
+        Select(index);
+        g_clickAt = now;
+        std::string name = g_index.entries[g_suggested[index]].name;
+        if (Search(name, true)) {
+            CloseSearch(" (picked with the mouse)");
+            return;
         }
+        ShowMessage();
     }
 }
 
@@ -2006,6 +2103,7 @@ void DrawGlows()
         targets.push_back({g.chest, {g.pos[0], g.pos[1], g.pos[2]}, alpha});
         ++i;
     }
+    nativehighlight::SetView(ui::Client(), player); // the client whose view matrix (+0x1d20) the screen projection uses
     nativehighlight::Publish(targets.data(), static_cast<unsigned>(targets.size()));
     nativehighlight::DrawSilhouettes();
 }
@@ -2438,6 +2536,7 @@ bool QueueSearch(const char* text)
 bool Init(const Config& config)
 {
     g_keys = config.keys;
+    g_exact = config.exactMatch;
     greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
     g_arrivedMeters = config.glow.nearMeters;

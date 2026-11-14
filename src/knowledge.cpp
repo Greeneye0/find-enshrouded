@@ -20,6 +20,9 @@ constexpr size_t kMaxRun = 200000;
 constexpr size_t kHead = 128;         // checked for recipe ids...
 constexpr int kMinRecipesInHead = 8;  // ...of which a knowledge array has about 30
 constexpr ULONGLONG kRescanMs = 60000; // full scans when none is found, at most this often
+// The arrays found stay readable after the game moves the list (it grows as you learn), but stop changing: a recipe
+// learned since is missing from them. Before one is called not unlocked, a full scan at most this often.
+constexpr ULONGLONG kFreshMs = 30000; // (a full scan takes 0.1-0.2 s: not on every search)
 
 std::vector<uintptr_t> g_runs; // where the arrays were found
 std::unordered_set<uint32_t> g_known;
@@ -96,14 +99,15 @@ bool Take(uintptr_t start, bool (*isRecipe)(uint32_t))
 
 } // namespace
 
-bool Refresh(bool (*isRecipe)(uint32_t))
+bool Refresh(bool (*isRecipe)(uint32_t), bool full)
 {
     g_known.clear();
     std::vector<uintptr_t> kept;
-    for (uintptr_t r : g_runs)
-        if (Take(r, isRecipe))
-            kept.push_back(r);
-    if (kept.empty() && (!g_lastScan || GetTickCount64() - g_lastScan >= kRescanMs)) {
+    if (!full)
+        for (uintptr_t r : g_runs)
+            if (Take(r, isRecipe))
+                kept.push_back(r);
+    if (full || (kept.empty() && (!g_lastScan || GetTickCount64() - g_lastScan >= kRescanMs))) {
         ULONGLONG start = GetTickCount64();
         g_lastScan = start;
         std::vector<uintptr_t> found;
@@ -121,5 +125,15 @@ bool Refresh(bool (*isRecipe)(uint32_t))
 bool Ready() { return g_ready; }
 
 bool Known(uint32_t id) { return g_known.count(id) != 0; }
+
+bool KnownAfterRescan(uint32_t id, bool (*isRecipe)(uint32_t))
+{
+    if (Known(id))
+        return true;
+    if (g_lastScan && GetTickCount64() - g_lastScan < kFreshMs)
+        return false;
+    Refresh(isRecipe, true);
+    return Known(id);
+}
 
 } // namespace knowledge

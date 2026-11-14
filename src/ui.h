@@ -106,6 +106,11 @@ uint32_t RarityColour(int rarity);
 // The mouse cursor in UI units. False when the game is not in the foreground.
 bool CursorInUi(float& x, float& y);
 void ClearDialog(Dialog* d);
+// The game's checkbox after the tips (Find's Exact match), ticked or not, with the key that switches
+// it and its label.
+void SetDialogCheckbox(Dialog* d, bool shown, bool on, const std::string& label, const greeneye::input::Binding& binding);
+// Whether the UI point (CursorInUi) is on the checkbox or its label, as last drawn.
+bool DialogCheckboxAt(Dialog* d, float x, float y);
 
 } // namespace ui
 

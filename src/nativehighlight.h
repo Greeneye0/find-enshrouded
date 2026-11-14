@@ -17,4 +17,6 @@ void Publish(const Target* targets, unsigned count);
 void Clear();
 void DrawSilhouettes();
 void SetStressTest(bool enabled);
+// UI thread, each frame while something glows: the game client (its view matrix places the copies) and the player's feet.
+void SetView(void* client, const float player[3]);
 }

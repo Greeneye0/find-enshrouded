@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <intrin.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -17,7 +18,14 @@
 namespace nativehighlight {
 namespace {
 constexpr unsigned kMax = 256;
-constexpr bool kEnableMeshProxy = false; // Rejected experiment: camera lag and residual silhouette.
+// Through walls: a copy of each lit model's render instance (the renderer's own create / bind / transform / delete)
+// moved toward the camera along the view ray and scaled by the same factor, so it covers the same pixels but stands in
+// front of walls; it shares the source's animation binding (+0x130), so an NPC's copy moves as the NPC does, and it gets
+// Find's outline. The HUD silhouette is drawn only where no copy could be made. Placed right before the frame stages its
+// render instances, with this frame's camera (the client's view): placed when the model systems run, they trailed a
+// turning camera by a frame (Find's first try, given up in 2026-10; the map mod's G G found the staging call, 2026-11-11).
+constexpr double kCopyNear = 1.5;   // metres from the eye at the least...
+constexpr double kCopyBeforePlayer = 1.0; // ...and this far on the eye's side of the player
 constexpr uint8_t kGroup = 7; // Group4; keep interaction/validity colors separate.
 struct Span { const void* data; uint64_t count; };
 struct Field { const char* text; uint64_t length; };
@@ -36,6 +44,9 @@ struct Applied {
     void* proxyInstance;
     silhouette::Snapshot silhouette;
     bool haveSilhouette;
+    // the source where the model systems left it, for placing the copy before staging
+    int64_t sourcePos[3];
+    float sourceRot[4], sourceScale[3], radius;
 };
 using NextFn = bool (*)(void*, void*, uint32_t);
 using SetFn = void (*)(void*, const Span*, const Span*);
@@ -52,6 +63,11 @@ using BindFn = void (*)(void*,const Span*,uint32_t);
 BindFn g_bind;
 using UploadFn=void (*)(void*);
 UploadFn g_upload;
+UploadFn g_stageNext; // the frame's call staging the render instances (same signature as the upload)
+volatile LONG g_copyCount;
+std::atomic<uint8_t*> g_client{nullptr};
+float g_player[3];
+volatile LONG g_havePlayer;
 NextFn g_next;
 SetFn g_set;
 InstanceFn g_instance;
@@ -153,45 +169,77 @@ void Restore(unsigned i) {
     g_applied[i] = g_applied[--g_appliedCount];
 }
 
-// A perspective-preserving mesh proxy. Moving every model-space point toward the
-// current eye by the same factor preserves its screen projection while bringing
-// its geometry in front of ordinary world occluders. Physics/ECS remain untouched.
-// This is an experimental render-only proxy, not a depth-disabled shader pass.
-bool ProxyTransform(void* renderer, const uint8_t* source, Spatial& output, float& factor) {
-    auto resource = Read<uint8_t*>(source, 0x108);
-    if (!resource || Read<uint8_t>(resource, 0x14) > 1 ||
-        Read<uint32_t>(resource, 0x70) || Read<uint64_t>(source, 0xa8)) return false;
-    auto asset = Read<uint8_t*>(resource, 0x38);
-    auto cameraState = Read<uint8_t*>(renderer, 0x40);
-    if (!asset || !cameraState) return false;
-    Spatial eye = Read<Spatial>(cameraState, 0x8d0);
-    output = Read<Spatial>(source, 0x38);
-    return detail::PerspectiveProxy(eye,output,Read<float>(asset,0x58),factor);
-}
 void RemoveProxy(Applied& a) {
     if (!a.proxy) return;
     if (g_instance(a.renderer,a.proxy,true)==a.proxyInstance) {
         Span handles{&a.proxy,1}; g_delete(a.renderer,&handles);
     }
     a.proxy=0; a.proxyInstance=nullptr;
+    InterlockedDecrement(&g_copyCount);
 }
-void UpdateProxy(Applied& a, uint8_t* source) {
-    Spatial transform{}; float factor=0;
-    if (!kEnableMeshProxy || !g_create || !ProxyTransform(a.renderer,source,transform,factor)) { RemoveProxy(a); return; }
-    if (a.proxy && g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) { a.proxy=0; a.proxyInstance=nullptr; }
-    if (!a.proxy) {
-        auto resource=Read<uint8_t*>(source,0x108);
+
+volatile LONG g_stageCalls, g_viewEyes, g_placed; // dev: what the staging hook did
+// This frame's eye: the client's view matrix, else the renderer's camera.
+bool Eye(void* renderer, double eye[3], double forward[3]) {
+    uint8_t* client = g_client.load(std::memory_order_relaxed);
+    float view[16];
+    if (client) {
+        memcpy(view, client + 0x1d20, sizeof(view));
+        if (detail::EyeFromView(view, eye, forward)) { InterlockedIncrement(&g_viewEyes); return true; }
+    }
+    auto camera = Read<uint8_t*>(renderer, 0x40);
+    return camera && detail::EyeFromCamera(Read<Spatial>(camera, 0x8d0), eye, forward);
+}
+
+double Nearest(const double eye[3]) {
+    double nearest = kCopyNear;
+    if (InterlockedCompareExchange(&g_havePlayer, 0, 0)) {
+        double d2 = 0;
+        for (int j = 0; j < 3; ++j) {
+            double d = g_player[j] + (j == 1 ? 1.0 : 0.0) - eye[j];
+            d2 += d * d;
+        }
+        nearest = (std::max)(nearest, (std::min)(std::sqrt(d2) - kCopyBeforePlayer, 12.0));
+    }
+    return nearest;
+}
+
+// The lit model's copy where the model is now (created on the first call): 1 there is one, 0 none needed (the model
+// is right before the eye, in view), -1 none could be made (the silhouette shows it instead).
+int UpdateProxy(Applied& a, uint8_t* source) {
+    if (!g_create || !g_transform || !g_delete || !g_bind) return -1;
+    auto resource = Read<uint8_t*>(source, 0x108);
+    auto asset = resource ? Read<uint8_t*>(resource, 0x38) : nullptr;
+    if (!asset) { RemoveProxy(a); return -1; }
+    Spatial transform = Read<Spatial>(source, 0x38);
+    memcpy(a.sourcePos, transform.position, sizeof(a.sourcePos));
+    memcpy(a.sourceRot, transform.rotation, sizeof(a.sourceRot));
+    memcpy(a.sourceScale, transform.scale, sizeof(a.sourceScale));
+    a.radius = Read<float>(asset, 0x58);
+    double eye[3], forward[3];
+    if (!Eye(a.renderer, eye, forward)) { RemoveProxy(a); return -1; }
+    if (!detail::PerspectiveCopy(eye, forward, Nearest(eye), transform, a.radius)) {
+        RemoveProxy(a); // right before the eye (or behind it): nothing to show through
+        return 0;
+    }
+    if (a.proxy && g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) { // gone with its renderer (a world left)
+        a.proxy=0; a.proxyInstance=nullptr;
+        InterlockedDecrement(&g_copyCount);
+    }
+    const bool created = !a.proxy;
+    if (created) {
         a.proxy=g_create(a.renderer,resource+0x18,&transform);
-        if (!a.proxy) return;
+        if (!a.proxy) return -1;
         a.proxyInstance=g_instance(a.renderer,a.proxy,true);
-        DevLog("xray proxy: source %08x proxy %08x factor %.5f position %.3f %.3f %.3f",a.handle,a.proxy,factor,
-            transform.position[0]/4294967296.0,transform.position[1]/4294967296.0,transform.position[2]/4294967296.0);
+        InterlockedIncrement(&g_copyCount);
+        DevLog("copy %08x of %08x (resource kind %u, binding %u)", a.proxy, a.handle, Read<uint8_t>(resource, 0x14),
+            Read<uint32_t>(source, 0x130));
     }
     Span handles{&a.proxy,1}, transforms{&transform,1};
-    uint32_t binding=Read<uint32_t>(source,0x130);
-    if (binding) g_bind(a.renderer,&handles,binding);
-    g_transform(a.renderer,&handles,&transforms,true);
+    if (uint32_t binding=Read<uint32_t>(source,0x130)) g_bind(a.renderer,&handles,binding);
+    if (created || !g_stageNext) g_transform(a.renderer,&handles,&transforms,created);
     Set(a.renderer,a.proxy,kGroup);
+    return 1;
 }
 
 // Called only at the END of the native model system's iteration, on its own thread.
@@ -287,8 +335,8 @@ void Apply(void* iter, void* view, const System& system) {
             // Let interaction/placement highlights take precedence over Find.
             if (instance[0x78] != 0 && instance[0x78] != a.last) continue;
             Set(renderer, handles[i], kGroup);
-            UpdateProxy(a,instance);
             a.haveSilhouette=false;
+            if (UpdateProxy(a,instance) >= 0) continue; // its copy shows it through walls (or it's right in view): no silhouette
             auto resource=Read<uint8_t*>(instance,0x108);
             auto asset=resource?Read<uint8_t*>(resource,0x38):nullptr;
             if(asset && Read<uint32_t>(asset,0x70)>0 && Read<uint32_t>(asset,0x70)<256) {
@@ -345,30 +393,45 @@ bool NextHookBody(void* iter, void* view, uint32_t size, const System* system)
     return next;
 }
 
-void RefreshProxyPoses() {
+// Right before the frame stages its render instances (g_lock held): every copy placed with this frame's camera.
+void PlaceCopiesInner(void* renderer) {
+    double eye[3], forward[3];
+    InterlockedIncrement(&g_stageCalls);
+    if (!Eye(renderer, eye, forward)) return;
+    const double nearest = Nearest(eye);
+    for (unsigned i=0;i<g_appliedCount;++i) {
+        Applied& a=g_applied[i];
+        if (!a.proxy || a.renderer!=renderer || a.radius<=0.0f) continue;
+        if (g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) continue;
+        Spatial transform{};
+        memcpy(transform.position, a.sourcePos, sizeof(a.sourcePos));
+        memcpy(transform.rotation, a.sourceRot, sizeof(a.sourceRot));
+        memcpy(transform.scale, a.sourceScale, sizeof(a.sourceScale));
+        if (!detail::PerspectiveCopy(eye, forward, nearest, transform, a.radius)) continue;
+        Span handles{&a.proxy,1},transforms{&transform,1};
+        g_transform(a.renderer,&handles,&transforms,false);
+        InterlockedIncrement(&g_placed);
+    }
+    static ULONGLONG at;
+    if (GetTickCount64() - at > 3000) {
+        at = GetTickCount64();
+        DevLog("copies: %ld staging calls, %ld with the client's view, %ld placements in 3 s; eye %.2f %.2f %.2f",
+            InterlockedExchange(&g_stageCalls, 0), InterlockedExchange(&g_viewEyes, 0), InterlockedExchange(&g_placed, 0), eye[0], eye[1], eye[2]);
+    }
+}
+void PlaceCopies(void* renderer) {
+    if (!InterlockedCompareExchange(&g_copyCount,0,0) || !renderer) return;
     AcquireSRWLockExclusive(&g_lock);
-    __try {
-        for (unsigned i=0;i<g_appliedCount;++i) {
-            Applied& a=g_applied[i];
-            auto source=g_instance(a.renderer,a.handle,true);
-            if (!a.proxy || source!=a.instance || g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) continue;
-            Spatial transform{};float factor=0;
-            if (!ProxyTransform(a.renderer,source,transform,factor)) continue;
-            auto before=Read<Spatial>(a.proxyInstance,0x38);
-            static ULONGLONG loggedAt;
-            double delta=0;for(unsigned j=0;j<3;++j)delta+=(transform.position[j]-before.position[j])/4294967296.0*(transform.position[j]-before.position[j])/4294967296.0;
-            if(delta>0.0000001 && GetTickCount64()-loggedAt>2000){loggedAt=GetTickCount64();DevLog("xray late camera correction %.4fm",std::sqrt(delta));}
-            Span handles{&a.proxy,1},transforms{&transform,1};
-            g_transform(a.renderer,&handles,&transforms,false);
-            if (g_upload) {
-                auto queue=Read<uint8_t*>(a.renderer,0x948);
-                uint64_t beforeCount=queue?Read<uint64_t>(queue,0x78):0;
-                g_upload(a.renderer);
-                static bool queueLogged;
-                if (!queueLogged && queue && delta>0.0000001) { queueLogged=true;DevLog("xray late upload queue %llu -> %llu",beforeCount,Read<uint64_t>(queue,0x78)); }
-            }
-        }
-    } __finally { ReleaseSRWLockExclusive(&g_lock); }
+    __try { PlaceCopiesInner(renderer); }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        static volatile LONG logged;
+        if (!InterlockedExchange(&logged, 1)) Log("native: placing the through-wall copies faulted");
+    }
+    ReleaseSRWLockExclusive(&g_lock);
+}
+void StageHook(void* renderer) {
+    { hot::Lease lease; if (lease) PlaceCopies(renderer); }
+    g_stageNext(renderer);
 }
 float* ColorHookBody(float* out, uint32_t color, void* returnSite);
 float* ColorHook(float* out, uint32_t color)
@@ -381,7 +444,6 @@ float* ColorHook(float* out, uint32_t color)
 float* ColorHookBody(float* out, uint32_t color, void* returnSite)
 {
     void* caller = returnSite;
-    if (kEnableMeshProxy && caller == g_paletteReturns[0] && InterlockedCompareExchange(&g_pulsing,0,0)) RefreshProxyPoses();
     if (InterlockedCompareExchange(&g_pulsing, 0, 0) &&
         (caller == g_paletteReturns[0] || caller == g_paletteReturns[1])) {
         float phase = static_cast<float>(GetTickCount64() % 1800) / 1800.0f;
@@ -404,6 +466,13 @@ void Publish(const Target* targets, unsigned count) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 void Clear() { Publish(nullptr, 0); }
+void SetView(void* client, const float player[3]) {
+    g_client.store(static_cast<uint8_t*>(client), std::memory_order_relaxed);
+    if (player) {
+        memcpy(g_player, player, sizeof(g_player));
+        InterlockedExchange(&g_havePlayer, 1);
+    }
+}
 static volatile LONG g_stressTest=0;
 void SetStressTest(bool enabled) { InterlockedExchange(&g_stressTest,enabled?1:0); }
 void DrawSilhouettes() {
@@ -462,14 +531,27 @@ bool Init() {
         return false;
     }
     // Validate both identified palette calls resolve to the identified conversion function.
-    for (auto p : {palette1, palette2})
-        if (p + 8 + Read<int32_t>(p, 4) != color) return false;
+    // The map mod redirects the first one to a hook of its own that calls on, so after a hot reload of Find (the map
+    // loaded since) the live call goes there: the loader's canonical bytes still show the game's call. Another mod's
+    // hook in between is fine; the patterns are specific enough to be the right calls.
+    for (auto p : {palette1, palette2}) {
+        int32_t original = 0;
+        hot::Read(p + 4, &original, 4);
+        if (p + 8 + original != color && p + 8 + Read<int32_t>(p, 4) != color)
+            Log("native: the palette call at %p goes to %p, not straight to the colour converter %p (another mod's hook)",
+                p, p + 8 + Read<int32_t>(p, 4), color);
+    }
     g_create=reinterpret_cast<CreateFn>(FindUnique("40 55 57 41 54 41 56 41 57 48 83 EC 30"));
     g_transform=reinterpret_cast<TransformFn>(FindUnique("48 8B C4 44 88 48 20 4C 89 40 18 55"));
     g_delete=reinterpret_cast<DeleteFn>(FindUnique("48 89 6C 24 20 57 41 54 41 56 48 83 EC 30"));
     g_bind=reinterpret_cast<BindFn>(FindUnique("48 89 5C 24 18 48 89 6C 24 20 56 41 54 41 57 48 83 EC 20 45 33 E4"));
     g_upload=reinterpret_cast<UploadFn>(FindUnique("48 8B C4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 88 48 81 EC 78 01 00 00 4C 8B 71 18"));
-    if (!g_create || !g_transform || !g_delete || !g_bind || !g_upload) return false;
+    if (!g_create || !g_transform || !g_delete || !g_bind || !g_upload) {
+        Log("native: render functions missing (create %p, transform %p, delete %p, bind %p, upload %p)",
+            reinterpret_cast<void*>(g_create), reinterpret_cast<void*>(g_transform), reinterpret_cast<void*>(g_delete),
+            reinterpret_cast<void*>(g_bind), reinterpret_cast<void*>(g_upload));
+        return false;
+    }
     g_set = reinterpret_cast<SetFn>(setter);
     g_instance = reinterpret_cast<InstanceFn>(instance);
     g_paletteReturns[0] = palette1 + 8;
@@ -482,7 +564,15 @@ bool Init() {
     const uint8_t load[] = {0xf3,0x0f,0x10,0x00};
     memcpy(prologue + 16, load, 4);
     g_color = reinterpret_cast<ColorFn>(InstallHook(color, reinterpret_cast<void*>(&ColorHook), 14, prologue, sizeof(prologue)));
-    if (!g_color) return false;
+    if (!g_color) {
+        Log("native: could not hook the colour converter at %p", color);
+        return false;
+    }
+    // The frame function's call staging the render instances (mov rcx, r12; call; cmp qword [r12 + 0xa38], 0): the
+    // copies are placed right before it. The map mod redirects it too; RedirectCall chains on whatever is there.
+    if (uint8_t* stage = FindUnique("49 8B CC E8 ?? ?? ?? ?? 49 83 BC 24 38 0A 00 00 00 74"))
+        g_stageNext = reinterpret_cast<UploadFn>(RedirectCall(stage + 3, reinterpret_cast<void*>(&StageHook)));
+    Log("native: through-wall copies %s", g_stageNext ? "placed before staging" : "placed with the model systems (staging call not found)");
     g_ready = HookNext(next);
     Log("native: %s; dynamic %p, static %p",g_ready ? "renderer pulse ready" : "hook failed",reinterpret_cast<void*>(g_systems[0].begin),reinterpret_cast<void*>(g_systems[1].begin));
     return g_ready;

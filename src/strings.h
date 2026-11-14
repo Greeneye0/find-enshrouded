@@ -29,6 +29,7 @@ enum Id {
     SkillPrompt,    // the Skills page: shown before anything is typed
     SkillNoMatch,   // the Skills page: %s, what was typed
     SkillsUnreadable, // the Skills page: its skills can't be read (game data not found)
+    ExactMatch,     // the dialog's toggle: only names holding the whole text
     Count
 };
 
@@ -40,6 +41,9 @@ std::string KindCount(uint32_t items, int chests);
 
 // "placed here", with how many when more than one: "placed here (3)".
 std::string PlacedCount(int count);
+
+// "Exact match hides 32 results.": how many more there would be without Exact match.
+std::string HiddenCount(int count);
 
 // Picks the language from the game's own "Cancel" text. Call once the UI texts are loaded.
 void Detect();

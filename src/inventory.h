@@ -71,6 +71,15 @@ int FindContainers(const float lo[3], const float hi[3], uint32_t* out, int max)
 // that lists no crafting-storage chests (a small flame altar). Needs Ready() first.
 int FindPlainChests(const float lo[3], const float hi[3], uint32_t* out, int max);
 
+// Finds the Position component type on the local player (the one holding pos, the world's own
+// player position, within 2 m). Needs Ready() first; does nothing once found. Until then the
+// build's 133 is used.
+void DetectPosition(uint32_t playerId, const float pos[3]);
+
+// The current Position and Inventory component types (detected, else the build's defaults).
+uint16_t TypePosition();
+uint16_t TypeInventory();
+
 // World position of an entity in meters. Returns false if unknown.
 bool Position(uint32_t entity, float out[3]);
 

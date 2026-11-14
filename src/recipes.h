@@ -28,4 +28,7 @@ bool IsRecipe(uint32_t id);
 // The recipes of a workshop that make itemId (their recipe ids).
 const std::vector<uint32_t>* RecipeIds(uint32_t workshop, uint32_t itemId);
 
+// dev: every recipe making itemId, with its unlock rule and whether known() holds its ids.
+void DevDescribe(uint32_t itemId, bool (*known)(uint32_t));
+
 } // namespace recipes

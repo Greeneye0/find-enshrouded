@@ -6,7 +6,7 @@
 #include "log.h"
 #include "ui.h"
 
-#define FIND_VERSION "1.2.12"
+#define FIND_VERSION "1.2.13"
 
 bool LoadProxyTargets();
 
@@ -45,6 +45,22 @@ static bool StartFind(const char* how, const GreeneyeHost* host)
 extern "C" __declspec(dllexport) void FindMapDialogReset(ui::Dialog* dialog)
 {
     ui::ClearDialog(dialog);
+}
+
+// The game's checkbox after the dialog's tips, as Find's Exact match draws it, for the map's Find box: shown or not,
+// ticked or not, its label (UTF-8, copied) and the keys that switch it in find.ini's format ("Ctrl+E, Pad:Y"; the
+// controller's button is shown next to the box). Call each frame before drawing the dialog.
+extern "C" __declspec(dllexport) void FindMapDialogCheckbox(ui::Dialog* dialog, bool shown, bool on, const char* label,
+                                                            const char* keys)
+{
+    if (dialog)
+        ui::SetDialogCheckbox(dialog, shown, on, label ? label : "", greeneye::input::MakeBinding(keys ? keys : ""));
+}
+
+// Whether a UI point (the dialog's cursor units) is on that checkbox or its label, as last drawn: a click there switches it.
+extern "C" __declspec(dllexport) bool FindMapDialogCheckboxAt(ui::Dialog* dialog, float x, float y)
+{
+    return dialog && ui::DialogCheckboxAt(dialog, x, y);
 }
 
 GREENEYE_MOD_START

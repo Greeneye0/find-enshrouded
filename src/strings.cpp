@@ -30,7 +30,7 @@ const char* const kTexts[LangCount][Count] = {
      T("can be made here"),
      T("made here, not unlocked yet"),
      T("placed here"),
-     T("Type a skill name or part of what it does."), T("No skill name or description matches \"%s\"."), T("The skill tree can't be read right now.")},
+     T("Type a skill name or part of what it does."), T("No skill name or description matches \"%s\"."), T("The skill tree can't be read right now."), T("Exact match")},
     // De
     {T("Suchen"), T("Gegenstand, Truhenname oder Art eingeben: Kategorie, Seltenheit, Perk."),
      T("Stell dich in eine deiner Basen, um ihre Truhen zu durchsuchen."),
@@ -41,7 +41,7 @@ const char* const kTexts[LangCount][Count] = {
      T("kann hier hergestellt werden"),
      T("wird hier hergestellt, noch nicht freigeschaltet"),
      T("hier aufgestellt"),
-     T("Namen einer Fähigkeit oder einen Teil ihrer Wirkung eingeben."), T("Keine Fähigkeit passt zu \"%s\"."), T("Der Fähigkeitenbaum kann gerade nicht gelesen werden.")},
+     T("Namen einer Fähigkeit oder einen Teil ihrer Wirkung eingeben."), T("Keine Fähigkeit passt zu \"%s\"."), T("Der Fähigkeitenbaum kann gerade nicht gelesen werden."), T("Genaue Suche")},
     // Fr
     {T("Chercher"), T("Saisissez un objet, un nom de coffre ou un type : catégorie, rareté, atout."),
      T("Placez-vous dans l'une de vos bases pour fouiller ses coffres."),
@@ -52,7 +52,7 @@ const char* const kTexts[LangCount][Count] = {
      T("fabricable ici"),
      T("fabriqué ici, pas encore débloqué"),
      T("placé ici"),
-     T("Saisissez le nom d'une compétence ou une partie de son effet."), T("Aucune compétence ne correspond à « %s »."), T("L'arbre de compétences ne peut pas être lu pour le moment.")},
+     T("Saisissez le nom d'une compétence ou une partie de son effet."), T("Aucune compétence ne correspond à « %s »."), T("L'arbre de compétences ne peut pas être lu pour le moment."), T("Correspondance exacte")},
     // Es
     {T("Buscar"), T("Escribe un objeto, el nombre de un cofre o un tipo: categoría, rareza, ventaja."),
      T("Colócate dentro de una de tus bases para buscar en sus cofres."),
@@ -63,7 +63,7 @@ const char* const kTexts[LangCount][Count] = {
      T("se puede fabricar aquí"),
      T("se fabrica aquí, aún no desbloqueado"),
      T("colocado aquí"),
-     T("Escribe el nombre de una habilidad o parte de su efecto."), T("Ninguna habilidad coincide con \"%s\"."), T("Ahora mismo no se puede leer el árbol de habilidades.")},
+     T("Escribe el nombre de una habilidad o parte de su efecto."), T("Ninguna habilidad coincide con \"%s\"."), T("Ahora mismo no se puede leer el árbol de habilidades."), T("Coincidencia exacta")},
     // It
     {T("Cerca"), T("Scrivi un oggetto, il nome di una cassa o un tipo: categoria, rarità, vantaggio."),
      T("Mettiti dentro una delle tue basi per cercare nelle sue casse."),
@@ -74,7 +74,7 @@ const char* const kTexts[LangCount][Count] = {
      T("si può fabbricare qui"),
      T("si fabbrica qui, non ancora sbloccato"),
      T("piazzato qui"),
-     T("Scrivi il nome di un'abilità o parte del suo effetto."), T("Nessuna abilità corrisponde a \"%s\"."), T("Al momento non è possibile leggere l'albero delle abilità.")},
+     T("Scrivi il nome di un'abilità o parte del suo effetto."), T("Nessuna abilità corrisponde a \"%s\"."), T("Al momento non è possibile leggere l'albero delle abilità."), T("Corrispondenza esatta")},
     // Pt
     {T("Buscar"), T("Digite um item, o nome de um baú ou um tipo: categoria, raridade, vantagem."),
      T("Fique dentro de uma das suas bases para procurar nos baús dela."),
@@ -85,7 +85,7 @@ const char* const kTexts[LangCount][Count] = {
      T("pode ser fabricado aqui"),
      T("fabricado aqui, ainda não desbloqueado"),
      T("colocado aqui"),
-     T("Digite o nome de uma habilidade ou parte do seu efeito."), T("Nenhuma habilidade corresponde a \"%s\"."), T("Não é possível ler a árvore de habilidades agora.")},
+     T("Digite o nome de uma habilidade ou parte do seu efeito."), T("Nenhuma habilidade corresponde a \"%s\"."), T("Não é possível ler a árvore de habilidades agora."), T("Correspondência exata")},
     // Pl
     {T("Szukaj"), T("Wpisz przedmiot, nazwę skrzyni lub rodzaj: kategoria, rzadkość, atut."),
      T("Stań w jednej ze swoich baz, aby przeszukać jej skrzynie."),
@@ -96,7 +96,7 @@ const char* const kTexts[LangCount][Count] = {
      T("można tu wytworzyć"),
      T("wytwarzane tutaj, jeszcze nie odblokowane"),
      T("postawione tutaj"),
-     T("Wpisz nazwę umiejętności lub część jej działania."), T("Żadna umiejętność nie pasuje do „%s”."), T("Nie można teraz odczytać drzewka umiejętności.")},
+     T("Wpisz nazwę umiejętności lub część jej działania."), T("Żadna umiejętność nie pasuje do „%s”."), T("Nie można teraz odczytać drzewka umiejętności."), T("Dokładne dopasowanie")},
     // Ru
     {T("Найти"), T("Введите предмет, название сундука или вид: категория, редкость, перк."),
      T("Встаньте в одной из своих баз, чтобы искать в её сундуках."),
@@ -107,7 +107,7 @@ const char* const kTexts[LangCount][Count] = {
      T("можно изготовить здесь"),
      T("изготавливается здесь, ещё не открыто"),
      T("установлено здесь"),
-     T("Введите название навыка или часть его эффекта."), T("Ни один навык не подходит под «%s»."), T("Сейчас не удаётся прочитать древо навыков.")},
+     T("Введите название навыка или часть его эффекта."), T("Ни один навык не подходит под «%s»."), T("Сейчас не удаётся прочитать древо навыков."), T("Точное совпадение")},
     // Uk
     {T("Знайти"), T("Введіть предмет, назву скрині або вид: категорія, рідкісність, перк."),
      T("Станьте в одній зі своїх баз, щоб шукати в її скринях."),
@@ -118,7 +118,7 @@ const char* const kTexts[LangCount][Count] = {
      T("можна виготовити тут"),
      T("виготовляється тут, ще не відкрито"),
      T("встановлено тут"),
-     T("Введіть назву навички або частину її ефекту."), T("Жодна навичка не відповідає «%s»."), T("Зараз не вдається прочитати дерево навичок.")},
+     T("Введіть назву навички або частину її ефекту."), T("Жодна навичка не відповідає «%s»."), T("Зараз не вдається прочитати дерево навичок."), T("Точний збіг")},
     // Ja
     {T("検索"), T("アイテム名、チェスト名、または種類（カテゴリー・レア度・パーク）を入力してください。"),
      T("拠点の中に立つと、その拠点のチェストを検索できます。"), T("この拠点には「%s」に一致するものがありません。"),
@@ -129,7 +129,7 @@ const char* const kTexts[LangCount][Count] = {
      T("ここで作れます"),
      T("ここで作れます（まだ未解放）"),
      T("ここに設置済み"),
-     T("スキル名、または効果の一部を入力してください。"), T("「%s」に一致するスキルはありません。"), T("現在スキルツリーを読み取れません。")},
+     T("スキル名、または効果の一部を入力してください。"), T("「%s」に一致するスキルはありません。"), T("現在スキルツリーを読み取れません。"), T("完全一致")},
     // Ko
     {T("찾기"), T("아이템, 상자 이름 또는 종류(카테고리, 등급, 특성)를 입력하세요."),
      T("자신의 기지 안에 서야 그 기지의 상자를 검색할 수 있습니다."), T("이 기지에는 \"%s\"와(과) 일치하는 것이 없습니다."),
@@ -139,7 +139,7 @@ const char* const kTexts[LangCount][Count] = {
      T("여기서 제작 가능"),
      T("여기서 제작 가능 (아직 잠김)"),
      T("여기에 설치됨"),
-     T("스킬 이름이나 효과의 일부를 입력하세요."), T("\"%s\"와(과) 일치하는 스킬이 없습니다."), T("지금은 스킬 트리를 읽을 수 없습니다.")},
+     T("스킬 이름이나 효과의 일부를 입력하세요."), T("\"%s\"와(과) 일치하는 스킬이 없습니다."), T("지금은 스킬 트리를 읽을 수 없습니다."), T("정확히 일치")},
     // Zh
     {T("查找"), T("输入物品、箱子名称或类别：分类、稀有度、特性。"), T("站在你的某个基地内才能搜索其箱子。"),
      T("此基地中没有与“%s”匹配的内容。"), T("Tab / Shift+Tab  选择     点击  选择     Enter  查找"), T("Enter / Esc  关闭"),
@@ -148,7 +148,7 @@ const char* const kTexts[LangCount][Count] = {
      T("可在此制作"),
      T("可在此制作（尚未解锁）"),
      T("已放置在此"),
-     T("输入技能名称或其效果的一部分。"), T("没有与“%s”匹配的技能。"), T("目前无法读取技能树。")},
+     T("输入技能名称或其效果的一部分。"), T("没有与“%s”匹配的技能。"), T("目前无法读取技能树。"), T("精确匹配")},
     // Tr
     {T("Bul"), T("Bir eşya, sandık adı ya da tür yazın: kategori, nadirlik, yetenek."),
      T("Sandıklarını aramak için üslerinden birinin içinde dur."), T("Bu üste \"%s\" ile eşleşen bir şey yok."),
@@ -158,7 +158,7 @@ const char* const kTexts[LangCount][Count] = {
      T("burada üretilebilir"),
      T("burada üretilir, henüz açılmadı"),
      T("burada yerleştirilmiş"),
-     T("Bir beceri adı ya da etkisinin bir kısmını yazın."), T("\"%s\" ile eşleşen bir beceri yok."), T("Beceri ağacı şu anda okunamıyor.")},
+     T("Bir beceri adı ya da etkisinin bir kısmını yazın."), T("\"%s\" ile eşleşen bir beceri yok."), T("Beceri ağacı şu anda okunamıyor."), T("Tam eşleşme")},
 };
 
 // Plural forms: 0 one, 1 few, 2 many (en-like languages use 0 and 2).
@@ -269,6 +269,30 @@ std::string KindCount(uint32_t items, int chests)
         _snprintf_s(buf, _TRUNCATE, "%s, %s", what, where);
     else
         _snprintf_s(buf, _TRUNCATE, "%s %s", what, where);
+    return buf;
+}
+
+// "Exact match hides N results." (results Exact match leaves out), by plural form (one, few, many).
+const char* const kHidden[LangCount][3] = {
+    {"Exact match hides %d result.", "Exact match hides %d results.", "Exact match hides %d results."},
+    {T("Genaue Suche blendet %d Treffer aus."), T("Genaue Suche blendet %d Treffer aus."), T("Genaue Suche blendet %d Treffer aus.")},
+    {T("La correspondance exacte masque %d résultat."), T("La correspondance exacte masque %d résultats."), T("La correspondance exacte masque %d résultats.")},
+    {T("La coincidencia exacta oculta %d resultado."), T("La coincidencia exacta oculta %d resultados."), T("La coincidencia exacta oculta %d resultados.")},
+    {T("La corrispondenza esatta nasconde %d risultato."), T("La corrispondenza esatta nasconde %d risultati."), T("La corrispondenza esatta nasconde %d risultati.")},
+    {T("A correspondência exata oculta %d resultado."), T("A correspondência exata oculta %d resultados."), T("A correspondência exata oculta %d resultados.")},
+    {T("Dokładne dopasowanie ukrywa %d wynik."), T("Dokładne dopasowanie ukrywa %d wyniki."), T("Dokładne dopasowanie ukrywa %d wyników.")},
+    {T("Точное совпадение скрывает %d результат."), T("Точное совпадение скрывает %d результата."), T("Точное совпадение скрывает %d результатов.")},
+    {T("Точний збіг приховує %d результат."), T("Точний збіг приховує %d результати."), T("Точний збіг приховує %d результатів.")},
+    {T("完全一致で%d件が非表示です。"), T("完全一致で%d件が非表示です。"), T("完全一致で%d件が非表示です。")},
+    {T("정확히 일치로 결과 %d개가 숨겨졌습니다."), T("정확히 일치로 결과 %d개가 숨겨졌습니다."), T("정확히 일치로 결과 %d개가 숨겨졌습니다.")},
+    {T("精确匹配隐藏了 %d 个结果。"), T("精确匹配隐藏了 %d 个结果。"), T("精确匹配隐藏了 %d 个结果。")},
+    {T("Tam eşleşme %d sonucu gizliyor."), T("Tam eşleşme %d sonucu gizliyor."), T("Tam eşleşme %d sonucu gizliyor.")},
+};
+
+std::string HiddenCount(int count)
+{
+    char buf[96];
+    _snprintf_s(buf, _TRUNCATE, kHidden[g_lang][PluralForm(static_cast<uint32_t>(count))], count);
     return buf;
 }
 

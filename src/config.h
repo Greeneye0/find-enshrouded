@@ -4,7 +4,7 @@
 
 // The keys and controller buttons of the search (common/input_binds.h).
 struct Bindings {
-    greeneye::input::Binding open, confirm, close, next, previous, up, down;
+    greeneye::input::Binding open, confirm, close, next, previous, up, down, exact;
 };
 
 // How long the chests of a search glow.
@@ -17,6 +17,7 @@ struct GlowTimes {
 struct Config {
     Bindings keys;
     GlowTimes glow;
+    bool exactMatch = false; // only names holding the whole text, not its words one by one
 };
 
 // Reads the keys from find.ini again when it changed (checked at most every 2 s); true if it did.
@@ -28,3 +29,6 @@ bool ParseNumber(const char* text, float lo, float hi, float& out);
 // Reads find.ini from the game folder, writing one with the defaults if it is missing and
 // adding settings an older find.ini lacks.
 Config LoadConfig();
+
+// Remembers the dialog's Exact match setting in find.ini.
+void SaveExactMatch(bool on);

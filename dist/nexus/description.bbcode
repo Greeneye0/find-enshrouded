@@ -14,7 +14,8 @@
 Stand in your base and press [b]Shift+F[/b]. A search box opens, drawn with the game's own dialog, so it looks like part of Enshrouded. Type what you are looking for:
 [list]
 [*][b]Suggestions as you type[/b], each with how many you have and in how many chests: [i]Granite Block — 996 in 1 chest[/i].
-[*][b]Pick with Tab, the arrow keys or the mouse.[/b] The mouse wheel scrolls long lists. [b]Enter[/b] finds.
+[*][b]Pick with Tab or the arrow keys and press Enter, or click a line[/b] to find it at once. The mouse wheel scrolls long lists.
+[*][b]Exact match[/b] (Ctrl+E, or Y on a controller): a checkbox in the search box. Off, a search of several words also lists names with only some of the words, lower down; on, only names that hold your whole text.
 [*][b]The matching chests pulse[/b] with the game's own highlight, so you can walk straight to them.
 [*][b]Open one and the items you searched for glow gold[/b] for a few seconds, every matching slot, so you see them at once in a full chest.
 [/list]
@@ -70,6 +71,7 @@ Open the Skills page and press [b]Shift+F[/b] (LB+X on a controller) to search t
 [*][b]glow_seconds[/b] = 180: the found chests glow at most this long (10-3600), or until your next search.
 [*][b]near_meters[/b] = 2.5: coming this close to a found chest counts as reaching it (0.5-20).
 [*][b]near_seconds[/b] = 3: a chest stops glowing this long after you reach or open it (0-60).
+[*][b]exact_match[/b] = 0: the Exact match checkbox, saved when you switch it in the search box. [b]exact_key[/b] = Ctrl+E, Pad:Y switches it.
 [/list]
 
 [line]
@@ -112,6 +114,23 @@ If something doesn't work, please post these two files from the game folder with
 [line]
 
 [size=4][b]Changelog[/b][/size]
+
+[b]1.2.13[/b]
+[list]
+[*]Partial matches: a search of several words also lists names that hold only some of them, lower in the list. [i]ring mana[/i] lists the Mana rings first, then other rings.
+[*]Exact match: a checkbox in the search box (Ctrl+E, or Y on a controller) lists only names that hold your whole text. Find remembers it, and the message line says how many results it hides. Rebind it with exact_key in find.ini.
+[*]One click on a line in the list finds it. Tab, the arrow keys and Enter work as before.
+[*]Chests and people show through walls in their real shape instead of a flat outline.
+[*]The World Map's Find box (The Worst Map Mod 1.3.49) gets the Exact match checkbox too.
+[*]Find keeps working when other mods (such as EML Tweaks) shift the game's internal numbering.
+[/list]
+Fixed:
+[list]
+[*]Chests sometimes didn't light up after a search.
+[*]Highlights shook and slid, with doubles snapping back into place.
+[*]Some recipes you had unlocked showed as "not unlocked yet", such as Coconut Milk.
+[*]On screens taller than 16:9 (such as 2560x1600), clicks in the search box landed below the line you pointed at.
+[/list]
 
 [b]1.2.12[/b]
 Reported bugs fixed:
@@ -185,140 +204,6 @@ Reported bugs fixed:
 Reported bugs fixed:
 [list]
 [*]Shift+7 had to be pressed over and over to open the search (reported by webbj8150).
-[/list]
-
-[b]1.2.3[/b]
-[list]
-[*]Chests lit through walls are drawn as smooth see-through outlines instead of a blocky, pixelated image, and drawing them takes much less time each frame.
-[/list]
-
-[b]1.2.2[/b]
-[list]
-[*]Recipes you haven't unlocked yet are marked: the NPC or station still lights up, and the suggestion says "made here, not unlocked yet" (search "oven" before the Farmer can make one).
-[/list]
-
-[b]1.2.1[/b]
-[list]
-[*]The Construction Hammer is found by its name: as a Blueprint it was left out. Your hammers and their saved blueprints are one "Construction Hammer" entry; Decay and Overgrowth Tools and their shapes are grouped the same way.
-[*]Summoning Staffs are one "Summoning Staff" entry instead of one per NPC.
-[/list]
-
-[b]1.2.0[/b]
-[list]
-[*]Crafters are found too: searching an item also lights the NPCs and crafting stations of your base that can make it (search "bandage" and your Hunter glows). Items no chest holds but your base can make are suggested as "can be made here".
-[/list]
-
-[b]1.1.10[/b]
-[list]
-[*]A chest that Find and Quick Deposit (or The Worst Map Mod) lit at the same time no longer stays outlined, in a mixed colour, after both glows end.
-[/list]
-
-[b]1.1.9[/b]
-[list]
-[*]Crafting stations are searched too: a seedbed's seedlings, a kiln's charcoal, a loom's linen and whatever else a station holds light it up like a chest. Planted bushes still stay out.
-[/list]
-
-[b]1.1.8[/b]
-[list]
-[*]Found chests light up again when another mod outlines things too (The Worst Map Mod's GG chest glow): Find no longer depends on being first in line for the game's highlight.
-[/list]
-
-[b]1.1.7[/b]
-[list]
-[*]Switching to another world without restarting the game no longer makes Find say "This base has no storage chests to search" in a base full of chests (a 1.1.6 bug).
-[/list]
-Reported bugs fixed:
-[list]
-[*]No storage chests found after switching worlds.
-[/list]
-
-[b]1.1.6[/b]
-[list]
-[*]Planted bushes are no longer treated as chests. The flame altar counts their fruit toward crafting, so searching "hazelnut" lit up every Hazelnut bush in the base, and with many of them in view the game crashed.
-[*]Crafting stations (spinning wheel, kiln, tanning station and the like) are no longer listed as chests in a base that has planted bushes.
-[*]Through-wall chest outlines have a detail limit, so many outlines at once can no longer crash the game.
-[/list]
-Reported bugs fixed:
-[list]
-[*]Game crash right after searching "hazelnut" (reported by Lomack).
-[/list]
-
-[b]1.1.5[/b]
-[list]
-[*]Works in a base whose altar lists no chests (a small flame altar): Find searches the storage chests inside the base instead of saying it has none.
-[/list]
-Reported bugs fixed:
-[list]
-[*]"This base has no storage chests to search" with a chest in the base (reported by Andydark287).
-[/list]
-
-[b]1.1.4[/b]
-[list]
-[*]An NPC's Summoning Staff is found as "Summoning Staff" too: the game names it after the NPC ("Fenrig Mills, Jr."), so only the NPC's name found it. Find lists it as "Summoning Staff (Fenrig Mills, Jr.)".
-[/list]
-Reported bugs fixed:
-[list]
-[*]Searching "summon" did not find Summoning Staffs (reported by HadToRegister).
-[/list]
-
-[b]1.1.3[/b]
-[list]
-[*]Fixed: in some bases a search missed items past a chest's first row and every chest not linked to the flame altar ("purple" found nothing although Purple Berries were in a chest). It happened when the base's first chest had only one row.
-[/list]
-Reported bugs fixed:
-[list]
-[*]Search did not find Purple Berries stored in the base.
-[/list]
-
-[b]1.1.2[/b]
-[list]
-[*]Works alongside the XHL mods (Vein Mining, Area Harvest, Free Climbing and the others): with Find installed, their F10 settings menu was missing and Area Harvest did not start. Find now hooks only its own calls to the game functions they look up, never the functions themselves.
-[/list]
-Reported bugs fixed:
-[list]
-[*]XHL mods (Vein Mining, Auto Harvest) stopped working and their F10 menu was missing with Find installed (reported by HadToRegister).
-[/list]
-
-[b]1.1.1[/b]
-[list]
-[*]Fixed: in a base where your game had not loaded the base's first chest yet (a large base, often on a server), every search found nothing. Find now tries every chest of the base, then your own backpack.
-[*]Fixed: after switching worlds without restarting the game (your own world, then a server), Find searched the old world and found nothing.
-[/list]
-
-[b]1.1.0[/b]
-[list]
-[*]Runs through the Greeneye Loader ([i]dbgcore.dll[/i]), shared with Quick Deposit, Continue and Auto Loot. [i]find.ini[/i] and [i]find.log[/i] now live in [i]greeneye\find\[/i].
-[*]New settings in [i]find.ini[/i]: [b]glow_seconds[/b] (how long chests glow at most), [b]near_meters[/b] (how close counts as reaching a chest) and [b]near_seconds[/b] (how long a chest keeps glowing after you reach or open it). Raise near_seconds to keep chests lit while you walk between them.
-[*]Found chests glow at most three minutes by default (was five).
-[*]The found items inside a chest glow only the first time you open it.
-[/list]
-Reported bugs fixed and requests:
-[list]
-[*]Items glowed again every time a chest was reopened (reported by Dacrenzio).
-[*]Chests should stay highlighted longer (requested by HadToRegister).
-[/list]
-
-[b]1.0.2[/b]
-[list]
-[*]Works with Creative Mode: 1.0.1 switched itself off next to it ("signature not found: LocaText"); Find now finds the game functions Creative Mode hooks and chains onto its hooks.
-[*]Finds a game function another mod has already hooked by the code behind that hook, so load order between mods matters less.
-[*]Inside a base without storage chests, Find says "This base has no storage chests to search." instead of claiming you are not in a base.
-[*]Outside a base the search field is switched off; Enter or Esc closes it.
-[/list]
-Reported bugs fixed:
-[list]
-[*]Find inactive next to Creative Mode (reported by Dacrenzio, cnrat and Bigdaddy2I42).
-[*]"Not in a base" shown in a base that has no storage chests (reported by GreeneyeDS).
-[/list]
-
-[b]1.0.1[/b]
-[list]
-[*]Esc hands the keyboard back to the game.
-[/list]
-
-[b]1.0.0[/b]
-[list]
-[*]First release.
 [/list]
 
 [line]

@@ -33,7 +33,8 @@ std::unordered_map<uint32_t, std::vector<uint32_t>> g_madeBy; // item -> worksho
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_makes;  // workshop -> items
 std::unordered_map<uint64_t, std::vector<uint32_t>> g_recipeIds; // workshop << 32 | item -> recipes
 std::unordered_set<uint32_t> g_allRecipeIds;
-std::vector<uint32_t> g_allOutputs; // every recipe's output items, also your own crafting menu's
+std::vector<uint32_t> g_allOutputs;
+std::unordered_map<uint32_t, std::vector<const uint8_t*>> g_byOutput; // item -> its recipes (records) // every recipe's output items, also your own crafting menu's
 bool g_loaded = false;
 
 struct Span {
@@ -91,8 +92,10 @@ int TakeRegistry(const Span& s, const uint8_t* header)
         {
             uint32_t n;
             const uint8_t* out = Array(s, r + kOutputs, kStackSize, n);
-            for (uint32_t o = 0; out && o < n; ++o)
+            for (uint32_t o = 0; out && o < n; ++o) {
                 g_allOutputs.push_back(*reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem));
+                g_byOutput[*reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem)].push_back(r);
+            }
         }
         if (!workshop)
             continue;
@@ -192,6 +195,31 @@ const std::vector<uint32_t>* RecipeIds(uint32_t workshop, uint32_t itemId)
 {
     auto it = g_recipeIds.find(static_cast<uint64_t>(workshop) << 32 | itemId);
     return it == g_recipeIds.end() ? nullptr : &it->second;
+}
+
+void DevDescribe(uint32_t itemId, bool (*known)(uint32_t))
+{
+    auto it = g_byOutput.find(itemId);
+    if (it == g_byOutput.end()) {
+        Log("dev recipes of %u: none", itemId);
+        return;
+    }
+    for (const uint8_t* r : it->second) {
+        __try {
+            uint32_t id = *reinterpret_cast<const uint32_t*>(r + kRecipeId);
+            uint32_t workshop = *reinterpret_cast<const uint32_t*>(r + kWorkshop);
+            const uint8_t* q = r + 0x50; // knowledgeRequirement: id, compareValue, op, type, explicit
+            const uint8_t* c = r + 0x5c; // completionRequirementQuery
+            uint32_t nameLen = *reinterpret_cast<const uint32_t*>(r + kDebugName + 4);
+            const char* name = reinterpret_cast<const char*>(r + kDebugName + *reinterpret_cast<const int32_t*>(r + kDebugName));
+            Log("dev recipe %.*s: id %08x known %d, workshop %08x, unlock {id %08x known %d, value %u, op %u, type %u, explicit %u}, "
+                "done {id %08x known %d, value %u, op %u, type %u}",
+                static_cast<int>(nameLen > 80 ? 80 : nameLen), name, id, known(id), workshop,
+                *reinterpret_cast<const uint32_t*>(q), known(*reinterpret_cast<const uint32_t*>(q)), *reinterpret_cast<const uint32_t*>(q + 4), q[8], q[9], q[10],
+                *reinterpret_cast<const uint32_t*>(c), known(*reinterpret_cast<const uint32_t*>(c)), *reinterpret_cast<const uint32_t*>(c + 4), c[8], c[9]);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
 }
 
 } // namespace recipes

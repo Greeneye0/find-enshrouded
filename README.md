@@ -23,7 +23,11 @@ servers and other players need nothing. Find only reads your chests; it never mo
    stays empty and Enter or Esc closes it.
 2. Type an item, a chest name, or a kind of item. Suggestions appear as you type.
    - **Tab / Shift+Tab** (or Down / Up) go through the suggestions, or click one with the
-     mouse (click it again to find it right away). **Enter** finds, **Esc** cancels. A bar
+     mouse to find it right away. **Enter** finds, **Esc** cancels.
+   - **Exact match** (**Ctrl+E**, or Y on a controller) is a checkbox in the search box. Off,
+     a search of several words also lists names with only some of the words, lower down
+     (`ring mana` lists the Mana rings first, then other rings); on, only names that hold
+     the whole text. The message line says how many results it hides. A bar
      beside the list shows where you are when there are more suggestions than fit.
    - A suggestion picked with Tab finds just that item, chest or kind.
    - Typed text finds every name with a word starting with it: `stone` finds Stone and
@@ -53,6 +57,7 @@ are added to it) holds:
 | `glow_seconds` | `180` | the found chests glow at most this long (10-3600), or until your next search |
 | `near_meters` | `2.5` | coming this close to a found chest counts as reaching it (0.5-20) |
 | `near_seconds` | `3` | a chest stops glowing this long after you reach or open it (0-60) |
+| `exact_match`, `exact_key` | `0`, `Ctrl+E, Pad:Y` | the Exact match checkbox (saved when you switch it in the search box) and what switches it |
 
 Restart the game after changing them.
 

@@ -799,39 +799,185 @@ struct Dialog {
     uint32_t tints[8] = {};                                   // per shown line: 0xAABBGGRR, 0: none
     // Keep new fields here, at the end: The Worst Map Mod uses Find's dialog and writes the fields above by offset.
     std::vector<DialogTip> tips;
+    // SetDialogCheckbox: the game's checkbox after the tips, with its key and label.
+    bool checkShown = false, checkOn = false;
+    std::string checkLabel;
+    greeneye::input::Binding checkBinding{};
+    float checkRect[4] = {}; // where it was drawn, for clicks
 };
 
 namespace {
 
-// The tips sit in the room a blank hint line keeps, side by side and centred. Widths are close to what
-// the game draws: the icon, its gap, and the label's letters.
+// One of the game's UI textures (assets + offset) at (x, y) in full-screen UI units, w x h, on a layer
+// of its own just over the game's text dialog, as the tips are drawn.
+bool DrawImageAt(float x, float y, float w, float h, size_t asset, uint32_t rgba, float alpha, const char* name)
+{
+    uint8_t* assets = Assets();
+    auto& n = greeneye::hints::Game();
+    if (!assets || !n.beginLayer || !n.endLayer || !n.named || !n.end || !g_begin || !g_end || !g_drawImage)
+        return false;
+    __try {
+        alignas(16) uint8_t layer[0x400]{};
+        const auto layerName = greeneye::hints::MakeText(name);
+        n.beginLayer(layer, &layerName, 1, 0x17, -1, 0);
+        alignas(16) uint8_t root[0x80]{};
+        n.named(root, &layerName);
+        Widget icon;
+        g_begin(icon.raw, 0);
+        if (uint8_t* node = icon.Handle()) {
+            *reinterpret_cast<uint16_t*>(node + 0x6e) = 0x0101;
+            *reinterpret_cast<uint64_t*>(node + 0x70) = Pack(x, y);
+            g_setSize(node, Pack(w, h));
+            float rect[4];
+            memcpy(rect, node + 0x114, sizeof(rect));
+            uint64_t c = Colour(rgba, alpha);
+            alignas(16) uint8_t tmp[16];
+            g_drawImage(icon.raw, rect, g_image(g_uiCtx(), tmp, assets + asset), &c);
+        }
+        g_end(icon.raw);
+        n.end(root);
+        n.endLayer(layer);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+constexpr float kHintLine = 30.0f; // the hint line's height: the tips go under it when it has text
+constexpr uint32_t kCheckLabelColour = 0xffe6e6e6; // the tips' labels
+// Text in the game's small style at (x, y) in full-screen UI units (its top left), on a layer of its own
+// just over the game's text dialog, in the tips' colour.
+bool DrawLabelAt(float x, float y, const char* utf8, const char* name)
+{
+    uint8_t* assets = Assets();
+    auto& n = greeneye::hints::Game();
+    if (!assets || !n.beginLayer || !n.endLayer || !n.named || !n.end || !g_begin || !g_end || !g_beginLabel || !g_endLabel)
+        return false;
+    __try {
+        alignas(16) uint8_t layer[0x400]{};
+        const auto layerName = greeneye::hints::MakeText(name);
+        n.beginLayer(layer, &layerName, 1, 0x17, -1, 0);
+        alignas(16) uint8_t root[0x80]{};
+        n.named(root, &layerName);
+        Widget anchor;
+        g_begin(anchor.raw, 0);
+        if (uint8_t* node = anchor.Handle()) {
+            *reinterpret_cast<uint16_t*>(node + 0x6e) = 0x0101;
+            *reinterpret_cast<uint64_t*>(node + 0x70) = Pack(x, y);
+        }
+        const Text text = MakeText(utf8);
+        alignas(16) uint8_t label[0x400] = {};
+        g_beginLabel(label, &text, assets + kAssetSmallText, 0);
+        *reinterpret_cast<uint32_t*>(label + 0xb0) = kCheckLabelColour;
+        *reinterpret_cast<float*>(label + 0xb4) = 1.0f;
+        g_endLabel(label);
+        g_end(anchor.raw);
+        n.end(root);
+        n.endLayer(layer);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The game's generic icons (FbUiIcons + 0x00): fulfilled is a ticked box, unfulfilled an empty one.
+constexpr float kCheckLabelDy = 0.0f;  // the label's top from the box's
+constexpr float kCheckBoxDy = -2.0f;  // the box's top from the tips' y
+constexpr size_t kAssetBoxTicked = 0xba18 + 0x20;
+constexpr size_t kAssetBoxEmpty = 0xba18 + 0x30;
+
+// The tips sit in the room a blank hint line keeps, side by side and centred, then the checkbox. Widths
+// are close to what the game draws: the icon, its gap, and the label's letters.
 void DrawTips(Dialog* d)
 {
-    // A blank hint line keeps the room under the buttons; the tips go there.
+    // A blank hint line keeps the room under the buttons; the tips go there. With a hint text too (the map mod's Find
+    // box writes its status line there: "483 matches", "Exact match hides 4 results."), the hint line shows it and a
+    // second, blank line keeps the room for the tips under it.
     static const Text blank = MakeText(" ");
-    DrawHintLabel(blank);
+    static std::string withHint;
+    static Text withHintText{};
+    // Find's own dialog sets its key hints there (SetDialogHint, kept in hintStore); the tips stand for them. The map
+    // writes the field itself (Dialog + 0x878), so hintStore stays empty.
+    const bool hasHint = d->hint.len != 0 && d->hint.utf8 && d->hintStore.empty();
+    if (hasHint) {
+        std::string want(d->hint.utf8, d->hint.len);
+        want += "\n ";
+        if (want != withHint) {
+            withHint = want;
+            withHintText = MakeText(withHint.c_str());
+        }
+        DrawHintLabel(withHintText);
+    } else {
+        DrawHintLabel(blank);
+    }
     float rect[4];
     std::memcpy(rect, g_rowRect, sizeof(rect));
     if (rect[2] < 10.0f)
         return; // no layout yet: the next frame has it
-    constexpr float kIcon = 26.0f, kCap = 44.0f, kLetter = 11.5f, kBetween = 26.0f;
-    float total = 0.0f;
-    for (const DialogTip& tip : d->tips)
-        total += kCap + kLetter * static_cast<float>(tip.label.size()) + kBetween;
+    constexpr float kIcon = 26.0f, kCap = 44.0f, kLetter = 11.5f;
+    constexpr float kBox = 30.0f, kBoxGap = 8.0f;
+    auto letters = [](const std::string& t) { // characters, not bytes
+        float n = 0;
+        for (unsigned char c : t)
+            n += (c & 0xC0) != 0x80 ? 1.0f : 0.0f;
+        return n;
+    };
+    const bool pad = greeneye::hints::PadInUse();
+    const bool checkKey = d->checkShown && pad && greeneye::hints::ShowsOn(d->checkBinding, pad); // a mouse clicks it
+    float content = 0.0f;
+    int gaps = 0;
+    for (const DialogTip& tip : d->tips) {
+        content += kCap + kLetter * letters(tip.label);
+        ++gaps;
+    }
+    const float checkWidth = kBox + kBoxGap + (checkKey ? kCap : 0.0f) + kLetter * letters(d->checkLabel);
+    if (d->checkShown) {
+        content += checkWidth;
+        ++gaps;
+    }
+    gaps = gaps > 0 ? gaps - 1 : 0;
+    constexpr float kBetween = 26.0f, kBeforeBox = 40.0f;
+    const float total = content + kBetween * gaps + (d->checkShown && !d->tips.empty() ? kBeforeBox - kBetween : 0.0f) + kBetween;
     float x = rect[0] + (rect[2] - (total - kBetween)) * 0.5f;
-    const float y = rect[1] + rect[3] + 22.0f;
+    const float y = rect[1] + rect[3] + 22.0f + (hasHint ? kHintLine : 0.0f);
     int index = 0;
     for (const DialogTip& tip : d->tips) {
         char name[24];
         sprintf_s(name, "findTip%d", index++);
         greeneye::hints::Draw(x, y, tip.label.c_str(), tip.binding, name, kIcon);
-        x += kCap + kLetter * static_cast<float>(tip.label.size()) + kBetween;
+        x += kCap + kLetter * letters(tip.label) + kBetween;
     }
+    if (!d->checkShown)
+        return;
+    if (!d->tips.empty())
+        x += kBeforeBox - kBetween;
+    const float boxY = y + kCheckBoxDy;
+    DrawImageAt(x, boxY, kBox, kBox, d->checkOn ? kAssetBoxTicked : kAssetBoxEmpty, 0xffffffffu, 1.0f, "findCheck");
+    d->checkRect[0] = x - 4.0f;
+    d->checkRect[1] = boxY - 6.0f;
+    d->checkRect[2] = checkWidth + 8.0f;
+    d->checkRect[3] = kBox + 12.0f;
+    if (checkKey)
+        greeneye::hints::Draw(x + kBox + kBoxGap, y, d->checkLabel.c_str(), d->checkBinding, "findCheckTip", kIcon);
+    else
+        DrawLabelAt(x + kBox + kBoxGap, boxY + kCheckLabelDy, d->checkLabel.c_str(), "findCheckTip");
 }
 
 void DrawHint(Dialog* d)
 {
-    if (!d->tips.empty() && greeneye::hints::CanDraw())
+#ifdef FIND_DEV
+    {
+        static ULONGLONG at;
+        if (GetTickCount64() - at > 1000) {
+            at = GetTickCount64();
+            float cx = 0, cy = 0;
+            bool cursor = ui::CursorInUi(cx, cy);
+            DevLog("dialog rects: field %.1f %.1f %.1f %.1f, row %.1f %.1f %.1f %.1f, cursor %d %.1f %.1f", g_fieldRect[0], g_fieldRect[1],
+                g_fieldRect[2], g_fieldRect[3], g_rowRect[0], g_rowRect[1], g_rowRect[2], g_rowRect[3], cursor, cx, cy);
+        }
+    }
+#endif
+    if ((!d->tips.empty() || d->checkShown) && greeneye::hints::CanDraw())
         DrawTips(d);
     else if (d->hint.len)
         DrawHintLabel(d->hint);
@@ -1172,10 +1318,11 @@ bool CursorInUi(float& x, float& y)
     if (!GetCursorPos(&cursor) || !ScreenToClient(foreground, &cursor) || !GetClientRect(foreground, &client) ||
         client.right <= 0 || client.bottom <= 0)
         return false;
-    // The UI is laid out 1080 units high, as wide as the window's aspect makes it (Auto Loot
-    // measured root 3840 x 1080 at 5120 x 1440 pixels). No widget is begun here: this runs after
+    // The UI is at least 1920 x 1080 units, the other side as the window's aspect makes it: 3840 x 1080 at
+    // 5120 x 1440 pixels (Auto Loot measured the root), 1920 x 1200 at 2560 x 1600 (the dialog's rows, 2026-11-14;
+    // 1080 high there put the cursor 10% off and clicks missed the lines). No widget is begun here: this runs after
     // the game's UI frame, where a widget without a parent faults.
-    float scale = 1080.0f / static_cast<float>(client.bottom);
+    float scale = (std::max)(1920.0f / static_cast<float>(client.right), 1080.0f / static_cast<float>(client.bottom));
     x = cursor.x * scale;
     y = cursor.y * scale;
     return true;
@@ -1192,6 +1339,22 @@ void SetDialogHint(Dialog* d, const std::string& hint)
         return;
     d->hintStore = hint;
     d->hint = MakeText(d->hintStore.c_str());
+}
+
+void SetDialogCheckbox(Dialog* d, bool shown, bool on, const std::string& label, const greeneye::input::Binding& binding)
+{
+    d->checkShown = shown;
+    d->checkOn = on;
+    d->checkLabel = label;
+    d->checkBinding = binding;
+    if (!shown)
+        memset(d->checkRect, 0, sizeof(d->checkRect));
+}
+
+bool DialogCheckboxAt(Dialog* d, float x, float y)
+{
+    const float* r = d->checkRect;
+    return d->checkShown && r[2] > 0 && x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
 }
 
 void ClearDialog(Dialog* d)

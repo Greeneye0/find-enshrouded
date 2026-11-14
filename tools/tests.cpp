@@ -6,6 +6,7 @@
 #include "../src/config.h"
 #include "../src/scan.h"
 #include "../src/jumppatch.h"
+#include "../src/match.h"
 
 void Log(const char*, ...) {}
 
@@ -112,6 +113,24 @@ int main()
     ok &= Check("number 2.5", ParseNumber("2.5", 0.5f, 20, v) && v == 2.5f);
     ok &= Check("rejects 3 min, out of range and empty",
                 !ParseNumber("3 min", 10, 3600, v) && !ParseNumber("5", 10, 3600, v) && !ParseNumber("", 0, 60, v));
+
+    {
+        using namespace match;
+        auto w = Words("  ring  mana ring ");
+        ok &= Check("words: ring, mana", w.size() == 2 && w[0] == "ring" && w[1] == "mana");
+        ok &= Check("phrase \"ring mana\" misses Ring of Mana", Rank("superior ring of mana", "ring mana") < 0);
+        ok &= Check("all words start: Ring of Mana", WordsRank("superior ring of mana", "", Words("ring mana")) == kAllWordStarts);
+        ok &= Check("any order: mana ring", WordsRank("superior ring of mana", "", Words("mana ring")) == kAllWordStarts);
+        ok &= Check("all in name, not word starts", WordsRank("stringed manacle", "", Words("ring mana")) == kAllInName);
+        ok &= Check("some words: Ring of Health ranks lower",
+                    WordsRank("ring of health", "", Words("ring mana")) == kSome + 1);
+        ok &= Check("\"of\" alone never matches", WordsRank("cloak of dusk", "", Words("of mana")) < 0);
+        ok &= Check("short word counts for all words", WordsRank("ring of mana", "", Words("of mana")) == kAllWordStarts);
+        ok &= Check("skill: name + description", WordsRank("bone to ash", "deals fire damage", Words("bone fire")) == kAllInText);
+        ok &= Check("one word: no word rank", WordsRank("ring of mana", "", Words("mana")) < 0);
+        ok &= Check("no word: no match", WordsRank("iron bar", "", Words("ring mana")) < 0);
+        ok &= Check("all beats some", IsAll(kAllInText) && !IsAll(kSome));
+    }
 
     HMODULE proxy = LoadLibraryW(L"..\\..\\bin\\wsock32.dll");
     auto inetAddr = proxy ? reinterpret_cast<unsigned long(__stdcall*)(const char*)>(GetProcAddress(proxy, "inet_addr")) : nullptr;

@@ -42,6 +42,11 @@ constexpr char kDialogKeysText[] =
     "previous_key = Shift+Tab\n"
     "up_key = Up, Pad:Up\n"
     "down_key = Down, Pad:Down\n";
+constexpr char kExactText[] =
+    "; exact_key switches Exact match in the open search (also a button in it). exact_match = 1: only names\n"
+    ";   holding the whole text; 0: also names with all its words (\"ring mana\": Ring of Mana), then some of them.\n"
+    "exact_key = Ctrl+E, Pad:Y\n";
+constexpr char kExactKey[] = "exact_match";
 
 struct BindingSetting {
     const char* key;
@@ -56,6 +61,7 @@ constexpr BindingSetting kBindings[] = {
     {"previous_key", "Shift+Tab", &Bindings::previous},
     {"up_key", "Up, Pad:Up", &Bindings::up},
     {"down_key", "Down, Pad:Down", &Bindings::down},
+    {"exact_key", "Ctrl+E, Pad:Y", &Bindings::exact},
 };
 
 void DefaultBindings(Bindings& keys)
@@ -113,6 +119,7 @@ void WriteDefaults()
     fputs(kDialogKeysText, f);
     for (const Number& n : kNumbers)
         WriteNumber(f, n);
+    fprintf(f, "%s%s = 0\n", kExactText, kExactKey);
     fclose(f);
 }
 
@@ -167,7 +174,7 @@ Config LoadConfig()
         return c;
     }
     bool seen[sizeof(kNumbers) / sizeof(kNumbers[0])] = {};
-    bool dialogKeysSeen = false;
+    bool dialogKeysSeen = false, exactSeen = false;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         std::string s = Trim(line);
@@ -181,6 +188,9 @@ Config LoadConfig()
             ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
         ReadBindingLine(key, value, c.keys);
         dialogKeysSeen = dialogKeysSeen || key == "confirm_key";
+        exactSeen = exactSeen || key == "exact_key";
+        if (key == kExactKey)
+            c.exactMatch = value == "1" || _stricmp(value.c_str(), "on") == 0 || _stricmp(value.c_str(), "true") == 0;
         for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {
             const Number& n = kNumbers[i];
             if (key != n.key)
@@ -206,7 +216,44 @@ Config LoadConfig()
     }
     if (!dialogKeysSeen && (add || (add = fopen(greeneye::DataPath(kFile), "a"))))
         fputs(kDialogKeysText, add);
+    if (!exactSeen && (add || (add = fopen(greeneye::DataPath(kFile), "a"))))
+        fprintf(add, "%sexact_match = %d\n", kExactText, c.exactMatch ? 1 : 0);
     if (add)
         fclose(add);
     return c;
+}
+
+void SaveExactMatch(bool on)
+{
+    // Rewrites only the exact_match line (added at the end if missing); the rest stays as written.
+    std::string out;
+    bool done = false;
+    if (FILE* f = fopen(greeneye::DataPath(kFile), "r")) {
+        char buf[512];
+        while (fgets(buf, sizeof(buf), f)) {
+            std::string s = Trim(buf);
+            size_t eq = s.find('=');
+            std::string key = eq == std::string::npos ? "" : Trim(s.substr(0, eq));
+            for (char& ch : key)
+                ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+            if (!done && key == kExactKey) {
+                out += std::string(kExactKey) + " = " + (on ? "1" : "0") + "\n";
+                done = true;
+            } else {
+                out += buf;
+            }
+        }
+        fclose(f);
+    }
+    if (!done) {
+        if (!out.empty() && out.back() != '\n')
+            out += "\n";
+        out += std::string(kExactKey) + " = " + (on ? "1" : "0") + "\n";
+    }
+    if (FILE* f = fopen(greeneye::DataPath(kFile), "w")) {
+        fputs(out.c_str(), f);
+        fclose(f);
+    } else {
+        Log("find.ini: could not save exact_match");
+    }
 }

@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.12
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.13
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -27,9 +27,11 @@ USE
 ---
 - Type an item, a chest name, or a kind of item. Suggestions appear as you type, with how
   many there are and in how many chests:  Granite Block - 996 in 1 chest
-- Tab / Shift+Tab (or Down / Up) go through the suggestions, or click one with the mouse.
-  The mouse wheel scrolls a long list. Enter (or clicking the chosen suggestion again)
-  finds; Esc cancels.
+- Tab / Shift+Tab (or Down / Up) go through the suggestions and Enter finds, or click one
+  with the mouse to find it at once. The mouse wheel scrolls a long list; Esc cancels.
+- Exact match (Ctrl+E, or Y on a controller), a checkbox in the search box: off, a search
+  of several words also lists names with only some of the words, lower down ("ring mana"
+  lists the Mana rings first, then other rings); on, only names that hold the whole text.
 - Typed text finds every name with a word starting with it: "stone" finds Stone and Rough
   Stone Block, "arrow" finds every arrow but not Narrow Wall.
 - The NPCs and crafting stations of your base that can make what you searched for light up
@@ -79,6 +81,8 @@ find.ini lacks are added to it):
                          your next search
     near_meters = 2.5    coming this close to a found chest counts as reaching it (0.5-20)
     near_seconds = 3     a chest stops glowing this long after you reach or open it (0-60)
+    exact_match = 0      the Exact match checkbox, saved when you switch it in the search
+                         box; exact_key = Ctrl+E, Pad:Y switches it
 Restart the game after changing them.
 
 
@@ -113,6 +117,25 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.13
+- Partial matches: a search of several words also lists names that hold only some of them,
+  lower in the list. "ring mana" lists the Mana rings first, then other rings.
+- Exact match: a checkbox in the search box (Ctrl+E, or Y on a controller) lists only names
+  that hold your whole text. Find remembers it, and the message line says how many results
+  it hides. Rebind it with exact_key in find.ini.
+- One click on a line in the list finds it. Tab, the arrow keys and Enter work as before.
+- Chests and people show through walls in their real shape instead of a flat outline.
+- The World Map's Find box (The Worst Map Mod 1.3.49) gets the Exact match checkbox too.
+- Find keeps working when other mods (such as EML Tweaks) shift the game's internal
+  numbering.
+
+Fixed:
+- Chests sometimes didn't light up after a search.
+- Highlights shook and slid, with doubles snapping back into place.
+- Some recipes you had unlocked showed as "not unlocked yet", such as Coconut Milk.
+- On screens taller than 16:9 (such as 2560x1600), clicks in the search box landed below the
+  line you pointed at.
+
 1.2.12
 
 Reported bugs fixed:
