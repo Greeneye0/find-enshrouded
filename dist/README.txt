@@ -141,6 +141,10 @@ Fixed:
 - After Enter found nothing, the search box didn't take your typing until you pressed Enter
   a few more times.
 
+Reported bugs fixed:
+- Chests in very large bases, such as a Shroud Depot, weren't found (reported by
+  VerySpecificDude).
+
 1.2.13
 - Partial matches: a search of several words also lists names that hold only some of them,
   lower in the list. "ring mana" lists the Mana rings first, then other rings.

@@ -6,3 +6,5 @@ Fixed:
 Clicking a line in the list could make your character attack: the click finds it now when you let go of the button.
 A search that found nothing left the previous search's chests glowing, so they looked like results.
 After Enter found nothing, the search box didn't take your typing until you pressed Enter a few more times.
+Reported bugs fixed:
+Chests in very large bases, such as a Shroud Depot, weren't found (reported by VerySpecificDude).
