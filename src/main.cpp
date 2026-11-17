@@ -6,7 +6,7 @@
 #include "log.h"
 #include "ui.h"
 
-#define FIND_VERSION "1.2.13"
+#define FIND_VERSION "1.2.14"
 
 bool LoadProxyTargets();
 
@@ -61,6 +61,14 @@ extern "C" __declspec(dllexport) void FindMapDialogCheckbox(ui::Dialog* dialog, 
 extern "C" __declspec(dllexport) bool FindMapDialogCheckboxAt(ui::Dialog* dialog, float x, float y)
 {
     return dialog && ui::DialogCheckboxAt(dialog, x, y);
+}
+
+// For the map mod: what Find's search lights right now, to pin on its maps. xyz gets x, y, z (world units, the game's
+// own positions, y up) per target and entities their ids; either may be null. Returns how many targets there are
+// (more than max when they don't all fit); generation changes with every new search. Safe from any thread.
+extern "C" __declspec(dllexport) int FindFoundTargets(float* xyz, uint32_t* entities, int max, uint32_t* generation)
+{
+    return find::FoundTargets(xyz, entities, max, generation);
 }
 
 GREENEYE_MOD_START

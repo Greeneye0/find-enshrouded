@@ -27,6 +27,12 @@ bool Init();
 
 void* G();      // the UI root (DAT_14281b498)
 void* Client(); // *(**(G + 0xd0) + 0x38), or null outside a world
+// Find's marker (the game's five-point star) centred at (cx, cy) in full-screen UI units, size x size, on a layer of its own
+// (the compass markers). Only inside the game's UI frame.
+bool DrawStorageIcon(float cx, float cy, float size, uint32_t rgba, float alpha);
+// Any of the game's UI textures (FbUiBundle offset) the same way, and a small label (dev previews).
+bool DrawAssetIcon(size_t asset, float cx, float cy, float size, uint32_t rgba, float alpha);
+bool DrawSmallLabel(float x, float y, const char* utf8);
 
 // --- world markers, drawn inside the HUD's spatial elements window ---
 
@@ -71,6 +77,8 @@ int DrawDialog(Dialog* d);
 void ReleaseDialogInput();
 // Ends the field's edit for this frame (no caret, typing goes nowhere); call after DrawDialog.
 void DisableDialogField();
+// Find's field takes the keyboard again (after Enter found nothing). False if it isn't Find's field now.
+bool ResumeDialogField();
 void RecoverDialogInput();
 int TextInputFlag();
 // The text typed so far.

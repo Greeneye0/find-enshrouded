@@ -16,7 +16,7 @@ Stand in your base and press [b]Shift+F[/b]. A search box opens, drawn with the 
 [*][b]Suggestions as you type[/b], each with how many you have and in how many chests: [i]Granite Block — 996 in 1 chest[/i].
 [*][b]Pick with Tab or the arrow keys and press Enter, or click a line[/b] to find it at once. The mouse wheel scrolls long lists.
 [*][b]Exact match[/b] (Ctrl+E, or Y on a controller): a checkbox in the search box. Off, a search of several words also lists names with only some of the words, lower down; on, only names that hold your whole text.
-[*][b]The matching chests pulse[/b] with the game's own highlight, so you can walk straight to them.
+[*][b]The matching chests pulse[/b] with the game's own highlight, so you can walk straight to them, and gold stars on the compass show which way they are. With [url=https://www.nexusmods.com/enshrouded/mods/220]The Worst Map Mod[/url] they show on the World Map and the minimap too.
 [*][b]Open one and the items you searched for glow gold[/b] for a few seconds, every matching slot, so you see them at once in a full chest.
 [/list]
 
@@ -41,6 +41,7 @@ Open the Skills page and press [b]Shift+F[/b] (LB+X on a controller) to search t
 [*][b]Kinds of items[/b]: categories ([i]Consumables[/i], [i]Ammunition[/i]...), rarities ([i]Uncommon[/i] to [i]Legendary[/i]), item types ([i]One-Handed Axe[/i]...) and perks ([i]Backstab Damage[/i]...). They are labelled in the list, like [i]Perk: Backstab Damage — 12 items in 3 chests[/i].
 [*][b]Who can make it[/b]: the NPCs and crafting stations of your base that can make the item light up too, so [i]bandage[/i] lights your Hunter. Items no chest holds are suggested as [i]can be made here[/i], or [i]made here, not unlocked yet[/i] when you haven't unlocked the recipe.
 [*][b]What stands in your base[/b]: stations, beds, torches and other things you placed light up for their own name, so [i]oven[/i] lights your ovens. Items no chest holds are suggested as [i]placed here[/i].
+[*][b]Item levels[/b]: [i]level 55[/i] finds items that are level 55 now or once fully upgraded.
 [*][b]Chest names you gave yourself[/b] with Rename. (The game's own "Storage Chest" titles are not searched, as every unnamed chest would match.)
 [/list]
 
@@ -114,6 +115,20 @@ If something doesn't work, please post these two files from the game folder with
 [line]
 
 [size=4][b]Changelog[/b][/size]
+
+[b]1.2.14[/b]
+[list]
+[*]Search by item level: [i]level 55[/i] finds items that are level 55 now or will be once fully upgraded, so Cutthroat Boots at 10/15 turn up under both [i]level 10[/i] and [i]level 15[/i]. It works in the game's language too ([i]Stufe 55[/i], [i]Niveau 55[/i] ...).
+[*]Found chests show as gold stars on the game's compass at the top of the screen, so you can see which way to go.
+[*]With [url=https://www.nexusmods.com/enshrouded/mods/220]The Worst Map Mod[/url] 1.3.54 or newer, found chests show as gold stars on the World Map and the minimap too.
+[*]Big bases: Find reads every chest of the base. Before, it stopped after the first 256 containers, so chests in a large depot were never found. Opening the search is faster on big bases too.
+[/list]
+Fixed:
+[list]
+[*]Clicking a line in the list could make your character attack: the click finds it now when you let go of the button.
+[*]A search that found nothing left the previous search's chests glowing, so they looked like results.
+[*]After Enter found nothing, the search box didn't take your typing until you pressed Enter a few more times.
+[/list]
 
 [b]1.2.13[/b]
 [list]
@@ -195,15 +210,6 @@ Reported bugs fixed:
 [list]
 [*]Updated for the 2 November 2026 game patch (game build 1283531). Find 1.2.4 did not recognise the patched game and switched itself off ("inactive" in [i]find.log[/i]), so Shift+F did nothing.
 [*]Things placed in your base are found too: searching "oven" lights up the ovens standing in the base, not only the Farmer who makes them. Stations, beds, torches and the like that no chest holds are suggested as "placed here" (with how many, if more than one).
-[/list]
-
-[b]1.2.4[/b]
-[list]
-[*]The hotkey opens the search every time, also from a programmable keypad or mouse macro: Find caught it only while it was held, so a very short press was often missed.
-[/list]
-Reported bugs fixed:
-[list]
-[*]Shift+7 had to be pressed over and over to open the search (reported by webbj8150).
 [/list]
 
 [line]

@@ -86,6 +86,11 @@ bool Position(uint32_t entity, float out[3]);
 // The name a player gave the entity in game (CustomPlayerString, resolved through the
 // client's custom string store at client + 0xf0). Returns false if it has none.
 bool CustomName(void* client, uint32_t entity, char* out, size_t size);
+// A stack's item level and rarity from the item's own data: keen::ecs::ItemState on the stack's pide entity
+// (+14 flags, HasLevel 0x10; +16 rarity; +17 level). False when the item has no level of its own.
+bool ItemLevel(const Stack& s, uint8_t& level, uint8_t& rarity);
+// Speeds up CustomName for one index build: CacheNames(client) before it, CacheNames(nullptr) after.
+void CacheNames(void* client);
 
 // Crafting stations inside the box (seedbed, kiln, loom and the like) that are not among the chests:
 // inventories of two or more storage pages. Bushes (one page), NPCs and mannequins stay out. Needs

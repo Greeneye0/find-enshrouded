@@ -1085,6 +1085,22 @@ uint8_t* EndFieldEdit()
 }
 }
 
+// Puts Find's field back into editing (the caret and typing come back): Enter ends the edit, and a search that found
+// nothing keeps the dialog open, so the field has to take the keyboard again.
+bool ResumeDialogField()
+{
+    __try {
+        auto root = static_cast<uint8_t*>(G());
+        auto owner = root ? *reinterpret_cast<uint8_t**>(root + 0xd0) : nullptr;
+        if (!g_findEditState || !owner || owner != g_findEditOwner || !*reinterpret_cast<void**>(owner))
+            return false;
+        g_findEditState[0x1988] = 1;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void DisableDialogField()
 {
     __try { EndFieldEdit(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -1376,3 +1392,24 @@ bool DrawMesh(const smooth_highlight::Batch& batch) {
     bool result=ui_mesh::Draw(widget.raw,batch);g_end(widget.raw);return result;
 }
 }
+
+namespace ui {
+// FbUiBundle icons.genericIcons.star5: the five-point star that marks found chests (reflected types, build 2026-11-04;
+// chosen 2026-11-17 from the game's icons; the map mod pins Find's chests with the same one).
+constexpr size_t kAssetStorageIcon = 0xbbc8;
+
+bool DrawStorageIcon(float cx, float cy, float size, uint32_t rgba, float alpha)
+{
+    return DrawImageAt(cx - size / 2, cy - size / 2, size, size, kAssetStorageIcon, rgba, alpha, "findCompass");
+}
+
+bool DrawAssetIcon(size_t asset, float cx, float cy, float size, uint32_t rgba, float alpha)
+{
+    return DrawImageAt(cx - size / 2, cy - size / 2, size, size, asset, rgba, alpha, "findCompass");
+}
+
+bool DrawSmallLabel(float x, float y, const char* utf8)
+{
+    return DrawLabelAt(x, y, utf8, "findCompassLabel");
+}
+} // namespace ui

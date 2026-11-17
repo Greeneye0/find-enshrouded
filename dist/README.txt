@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.13
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.14
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -39,7 +39,9 @@ USE
   suggested as "can be made here", or "made here, not unlocked yet" when you haven't
   unlocked the recipe yet.
 - A suggestion picked with Tab or the mouse finds just that item, chest or kind.
-- The matching chests pulse with the game's own highlight. A chest stops pulsing a few
+- The matching chests pulse with the game's own highlight, and gold stars on the game's
+  compass show which way they are. With The Worst Map Mod (1.3.54 or newer) they show on
+  the World Map and the minimap too. A chest stops pulsing a few
   seconds after you reach it or open it. Every pulse ends after three minutes, with your
   next search, or when you leave the base.
 - Open a matching chest and the found items in it glow gold for about five seconds, the
@@ -63,6 +65,8 @@ WHAT YOU CAN SEARCH FOR
 - Kinds of items: categories (Consumables, Ammunition, Materials, ...), rarities (Uncommon
   to Legendary), item types (One-Handed Axe, ...) and perks (Backstab Damage, ...). They
   are labelled in the list:  Perk: Backstab Damage - 12 items in 3 chests
+- Item levels: "level 55" finds items that are level 55 now or will be once fully upgraded
+  (Cutthroat Boots at 10/15 count for both 10 and 15).
 - Chest names you gave yourself with Rename. The game's own chest titles ("Storage Chest"
   and its variants) are not searched, as every unnamed chest would match.
 
@@ -117,6 +121,26 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.14
+- Search by item level: "level 55" finds items that are level 55 now or will be once fully
+  upgraded, so Cutthroat Boots at 10/15 turn up under both "level 10" and "level 15". It
+  works in the game's language too ("Stufe 55", "Niveau 55" ...).
+- Found chests show as gold stars on the game's compass at the top of the screen, so you can
+  see which way to go.
+- With The Worst Map Mod 1.3.54 or newer, found chests show as gold stars on the World Map
+  and the minimap too.
+- Big bases: Find reads every chest of the base. Before, it stopped after the first 256
+  containers, so chests in a large depot were never found. Opening the search is faster on
+  big bases too.
+
+Fixed:
+- Clicking a line in the list could make your character attack: the click finds it now when
+  you let go of the button.
+- A search that found nothing left the previous search's chests glowing, so they looked like
+  results.
+- After Enter found nothing, the search box didn't take your typing until you pressed Enter
+  a few more times.
+
 1.2.13
 - Partial matches: a search of several words also lists names that hold only some of them,
   lower in the list. "ring mana" lists the Mana rings first, then other rings.

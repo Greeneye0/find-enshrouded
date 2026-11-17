@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 #include "inventory.h"
 #include "log.h"
@@ -50,6 +51,7 @@ uint16_t g_typeHotbar = 0; // detected: player component with the hotbar page id
 // Detected: the component whose 8 bytes are a custom string id (CustomPlayerString). Like every
 // type number, it differs between worlds, so it is forgotten with the registry.
 uint16_t g_typeCustomName = 0;
+uint16_t g_typeItemState = 0; // detected: the component of a stack's pide entity holding the item id at +8
 // Detected: the component of an NPC or crafting station that names its workshop (16 bytes, the
 // workshop id at + 0xc), like the type numbers forgotten with the registry.
 uint16_t g_typeWorkshop = 0;
@@ -453,6 +455,7 @@ void Forget()
     g_positionFound = false;
     g_typeHotbar = 0;
     g_typeCustomName = 0;
+    g_typeItemState = 0;
     g_typeWorkshop = 0;
     for (auto& slot : g_seen)
         slot.store(nullptr);
@@ -481,6 +484,7 @@ bool Ready(uint32_t playerId, const uint32_t* probes, int probeCount)
         g_typeSetup = 0;
         g_typeHotbar = 0;
         g_typeCustomName = 0;
+        g_typeItemState = 0;
         g_typeInventory = kDefaultInventory;
         g_typePosition = kDefaultPosition;
         g_positionFound = false;
@@ -658,10 +662,10 @@ int FindPlainChests(const float lo[3], const float hi[3], uint32_t* out, int max
     // Every inventory owner in the box whose pages are all storage: equipment, customization or
     // currency pages mean a player, an NPC or a mannequin. (Component type numbers change between
     // game sessions, so chests are not matched by their component types.)
-    uint32_t found[512];
-    int nf = FindContainers(lo, hi, found, max < 512 ? max : 512);
+    std::vector<uint32_t> found(8192); // every container of a big base (512 stopped short)
+    int nf = FindContainers(lo, hi, found.data(), static_cast<int>(found.size()));
     int n = 0;
-    for (int i = 0; i < nf; ++i) {
+    for (int i = 0; i < nf && n < max; ++i) {
         Owner o;
         if (!ReadOwner(found[i], o))
             continue;
@@ -684,8 +688,8 @@ int FindStations(const float lo[3], const float hi[3], const uint32_t* chests, i
     // Crafting stations hold their input and output in two or more storage pages (the first is the
     // station itself). Planted bushes keep their fruit in a single page of their own; equipment,
     // customization or currency pages mean an NPC, a mannequin or a player.
-    uint32_t found[512];
-    int nf = FindContainers(lo, hi, found, 512);
+    std::vector<uint32_t> found(8192); // every container of a big base (512 stopped short)
+    int nf = FindContainers(lo, hi, found.data(), static_cast<int>(found.size()));
     int n = 0;
     for (int i = 0; i < nf && n < max; ++i) {
         if (std::find(chests, chests + chestCount, found[i]) != chests + chestCount)
@@ -712,7 +716,7 @@ int FindPlaced(const float lo[3], const float hi[3], Placed* out, int max)
     if (!g_registry || max <= 0)
         return 0;
     const uint16_t need[] = {g_typePosition};
-    std::vector<uint32_t> ids(8192);
+    std::vector<uint32_t> ids(32768);
     int scanned = 0;
     int n = WalkEntities(g_registry, need, 1, lo, hi, ids.data(), static_cast<int>(ids.size()), scanned);
     auto templateOf = [](uint8_t* rec, uint8_t* guid) -> bool {
@@ -742,7 +746,7 @@ int FindCrafters(const float lo[3], const float hi[3], bool (*isWorkshop)(uint32
     if (!g_registry || !isWorkshop || max <= 0)
         return 0;
     const uint16_t need[] = {g_typePosition};
-    std::vector<uint32_t> ids(8192);
+    std::vector<uint32_t> ids(32768);
     int scanned = 0;
     int n = WalkEntities(g_registry, need, 1, lo, hi, ids.data(), static_cast<int>(ids.size()), scanned);
     auto workshopOf = [](uint8_t* data) -> uint32_t {
@@ -968,6 +972,11 @@ bool Position(uint32_t entity, float out[3])
 // Custom string store (see 140e54bf0): map at store + 0x190 with occupancy bits at +0x198,
 // capacity at +0x1a0, 64-bit ids at +0x1b8 and entry pointers at +0x1d0; an entry holds the
 // text pointer at +0x18 and its length at +0x20.
+// While an index is built: the custom strings' slots by id, so each chest's name is one lookup, not a walk of the
+// whole table (a depot of 1300 chests spent 24 ms walking it).
+std::unordered_map<uint64_t, uint64_t> g_nameSlots;
+uint8_t* g_nameStore = nullptr;
+
 const uint8_t* FindCustomString(uint8_t* store, uint64_t id, uint32_t* len)
 {
     uint64_t capacity = *reinterpret_cast<uint64_t*>(store + 0x1a0);
@@ -976,6 +985,16 @@ const uint8_t* FindCustomString(uint8_t* store, uint64_t id, uint32_t* len)
     auto* entries = *reinterpret_cast<uint8_t***>(store + 0x1d0);
     if (!id || capacity > 0x10000 || !used || !keys || !entries)
         return nullptr;
+    if (store == g_nameStore) {
+        auto it = g_nameSlots.find(id);
+        if (it == g_nameSlots.end())
+            return nullptr;
+        uint64_t i = it->second;
+        if (i >= capacity || !(used[i >> 6] >> (i & 63) & 1) || keys[i] != id || !entries[i])
+            return nullptr; // the table changed under the cache: no name this time
+        *len = static_cast<uint32_t>(*reinterpret_cast<uint64_t*>(entries[i] + 0x20));
+        return *reinterpret_cast<const uint8_t**>(entries[i] + 0x18);
+    }
     for (uint64_t i = 0; i < capacity; ++i) {
         if (!(used[i >> 6] >> (i & 63) & 1) || keys[i] != id || !entries[i])
             continue;
@@ -985,6 +1004,69 @@ const uint8_t* FindCustomString(uint8_t* store, uint64_t id, uint32_t* len)
     return nullptr;
 }
 
+
+bool ItemLevel(const Stack& s, uint8_t& level, uint8_t& rarity)
+{
+    if (!g_registry || !s.pide || !s.itemId)
+        return false;
+    if (!g_typeItemState) {
+        uint16_t types[kComponentBits];
+        int n = EntityTypes(g_registry, s.pide, types, kComponentBits);
+        for (int i = 0; i < n && !g_typeItemState; ++i)
+            if (auto* d = static_cast<uint8_t*>(Component(g_registry, types[i], s.pide))) {
+                uint32_t id = 0;
+                __try {
+                    id = *reinterpret_cast<uint32_t*>(d + 8);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                }
+                if (id == s.itemId) {
+                    g_typeItemState = types[i];
+                    Log("item levels: ItemState is type %u", types[i]);
+                }
+            }
+        if (!g_typeItemState)
+            return false;
+    }
+    auto* d = static_cast<uint8_t*>(Component(g_registry, g_typeItemState, s.pide));
+    if (!d)
+        return false;
+    uint8_t st[18];
+    __try {
+        memcpy(st, d, sizeof(st));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (*reinterpret_cast<uint32_t*>(st + 8) != s.itemId || !((st[14] | st[15] << 8) & 0x10))
+        return false;
+    rarity = st[16];
+    level = st[17];
+    return level != 0;
+}
+
+void CacheNames(void* client)
+{
+    g_nameSlots.clear();
+    g_nameStore = nullptr;
+    if (!client)
+        return;
+    __try {
+        auto* store = *reinterpret_cast<uint8_t**>(static_cast<uint8_t*>(client) + 0xf0);
+        if (!store)
+            return;
+        uint64_t capacity = *reinterpret_cast<uint64_t*>(store + 0x1a0);
+        auto* used = *reinterpret_cast<uint64_t**>(store + 0x198);
+        auto* keys = *reinterpret_cast<uint64_t**>(store + 0x1b8);
+        if (capacity > 0x10000 || !used || !keys)
+            return;
+        for (uint64_t i = 0; i < capacity; ++i)
+            if (used[i >> 6] >> (i & 63) & 1)
+                g_nameSlots.emplace(keys[i], i);
+        g_nameStore = store;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_nameSlots.clear();
+        g_nameStore = nullptr;
+    }
+}
 
 bool CustomName(void* client, uint32_t entity, char* out, size_t size)
 {

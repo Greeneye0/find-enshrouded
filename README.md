@@ -32,7 +32,10 @@ servers and other players need nothing. Find only reads your chests; it never mo
    - A suggestion picked with Tab finds just that item, chest or kind.
    - Typed text finds every name with a word starting with it: `stone` finds Stone and
      Rough Stone Block, `arrow` finds every arrow but not Narrow Wall.
-3. The matching chests pulse. Open one and the found items in it pulse gold for about five
+3. The matching chests pulse, and gold stars on the game's compass show which way they are
+   (with [The Worst Map Mod](https://www.nexusmods.com/enshrouded/mods/220) 1.3.54 or newer
+   they show on the World Map and the minimap too: Find exports `FindFoundTargets` for it).
+   Open one and the found items in it pulse gold for about five
    seconds, the first time you open it. A chest's pulse ends a few seconds after you reach it
    or open it; every pulse ends after three minutes, with your next search, or when you leave
    the base.
@@ -71,6 +74,8 @@ Restart the game after changing them.
   light up too (`bandage` lights the Hunter). Items no chest holds but the base can make are
   suggested as `can be made here`, or `made here, not unlocked yet` when you haven't unlocked
   the recipe.
+- **Item levels**: `level 55` finds items that are level 55 now or will be once fully
+  upgraded (Cutthroat Boots at 10/15 count for both 10 and 15).
 - **Chest names you gave yourself** with Rename. The game's own chest titles,
   "Storage Chest" and its variants (Large Storage Chest and the like), are not searched:
   every unnamed chest would match.

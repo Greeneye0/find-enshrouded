@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -79,7 +80,7 @@ constexpr size_t kBaseMin = 0xF0;
 constexpr size_t kBaseMax = 0x100;
 constexpr size_t kItemName = 0x48;
 constexpr float kFixedToMeters = 1.0f / 4294967296.0f;
-constexpr int kMaxChests = 256;
+constexpr int kMaxChests = 4096; // 256 stopped short in big bases: a depot server had more containers than that
 
 constexpr int kVisibleSuggestions = 7; // the dialog shows up to 8 lines
 constexpr int kMaxSuggestions = 60;     // the list scrolls through this many
@@ -89,6 +90,7 @@ constexpr size_t kItemCaption = 0x58;   // ItemInfo: CaptionLocaTag, the type li
 constexpr size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
 constexpr uint8_t kCategoryBlueprints = 10;
 constexpr size_t kItemPerkIds = 0x658;  // ItemInfo: PerkId[5], the perks its upgrades unlock
+constexpr size_t kItemLevelRange = 0x674; // ItemInfo: itemLevelRange {minLevel, maxLevel} (uint32)
 constexpr size_t kUiClientPerks = 0x466800; // UI client: the perk registry (as the item tooltip uses it)
 // A glow lasts until the next search, at most glow_seconds (find.ini), or until you come within
 // near_meters (3D) and then near_seconds more.
@@ -141,6 +143,18 @@ struct Glow {
 std::vector<Glow> g_glows;
 std::vector<Glow> g_found; // every chest of the search, kept after its glow ends
 ULONGLONG g_glowsUntil = 0;
+// What other mods can read (the map mod draws it): the chests and stations lit right now, copied whenever they change.
+SRWLOCK g_shareLock = SRWLOCK_INIT;
+std::vector<Glow> g_shared;
+uint32_t g_shareGeneration = 0; // a new search: a new number
+void ShareFound(bool newSearch)
+{
+    AcquireSRWLockExclusive(&g_shareLock);
+    g_shared = g_glows;
+    if (newSearch)
+        ++g_shareGeneration;
+    ReleaseSRWLockExclusive(&g_shareLock);
+}
 ULONGLONG g_glowsStart = 0;
 ULONGLONG g_lastGlowDraw = 0;
 
@@ -219,6 +233,35 @@ int g_selected = -1;
 int g_top = 0;                // the first suggestion shown (the list scrolls)
 std::string g_notice;         // "nothing found" and the like, shown until the text changes
 bool g_navDown[6] = {};       // next, up, down, left mouse button, confirm, previous edges
+#ifdef FIND_DEV
+// "@dev-icons": the textures that could mark a chest on the compass, numbered, side by side for 30 s.
+ULONGLONG g_iconPreviewUntil = 0;
+struct PreviewIcon { size_t asset; const char* name; };
+const PreviewIcon kPreviewIcons[] = {
+    {0xbfb8, "accessStorage"}, {0xe0f0, "compass.priorityMarker"}, {0xe0d0, "compass.mark"},
+    {0xbae8, "hudMarkerFill"}, {0xbaf8, "hudMarkerOutline"}, {0xba78, "pin"}, {0xbbb8, "star4"}, {0xbbc8, "star5"},
+    {0xbf38, "location"}, {0xd410, "diamond"}, {0xeec0, "map.waypoint"}, {0xef40, "map.playerPing"},
+    {0xef50, "map.playerMarkerPing"}, {0xef10, "map.investigation"}, {0xf030, "customMarkerWaypoint"},
+    {0xba88, "menuAttentionMarker"}, {0xbe78, "questImportant"}, {0xf078, "pinnedRecipeIcon"},
+};
+void DrawIconPreview()
+{
+    if (GetTickCount64() >= g_iconPreviewUntil)
+        return;
+    constexpr int kPerRow = 9;
+    for (int i = 0; i < static_cast<int>(sizeof(kPreviewIcons) / sizeof(kPreviewIcons[0])); ++i) {
+        float x = 360.0f + (i % kPerRow) * 150.0f, y = 260.0f + (i / kPerRow) * 150.0f;
+        ui::DrawAssetIcon(kPreviewIcons[i].asset, x, y, 40.0f, kIconColour, 1.0f);
+        ui::DrawAssetIcon(kPreviewIcons[i].asset, x, y + 50.0f, 26.0f, 0xFFFFFFFF, 1.0f);
+        char label[8];
+        sprintf_s(label, "%d", i + 1);
+        ui::DrawSmallLabel(x - 8.0f, y + 70.0f, label);
+    }
+}
+#endif
+
+int g_compassSign = 1; // which way the compass strip runs (dev: "@dev-compass" flips it)
+bool g_resumeField = false;   // Enter found nothing: give the field the keyboard back once Enter is up
 ULONGLONG g_clickAt = 0;       // the last click on a suggestion
 int g_hover = -1;              // the suggestion under the mouse
 constexpr ULONGLONG kDoubleClickMs = 500;
@@ -296,6 +339,8 @@ void AddStations(uint8_t* base, std::vector<uint32_t>& out)
 
 float g_baseLo[3], g_baseHi[3]; // the bounds of the base BaseChests found
 
+double DevMs();
+double g_devReadMs, g_devNameMs, g_devPosMs;
 bool BaseChests(std::vector<uint32_t>& out, std::string& why)
 {
     void* client = GameClient();
@@ -371,13 +416,18 @@ bool BaseChests(std::vector<uint32_t>& out, std::string& why)
         AddStations(base, out);
         return true;
     }
+    double t0 = DevMs();
     std::vector<uint32_t> found(kMaxChests);
     int nf = inv::FindContainers(&At<float>(base, kBaseMin), &At<float>(base, kBaseMax), found.data(), kMaxChests);
+    double t1 = DevMs();
     nf = inv::KeepStorageChests(magic.data(), static_cast<int>(magic.size()), found.data(), nf);
+    double t2 = DevMs();
     for (int i = 0; i < nf; ++i)
         if (std::find(out.begin(), out.end(), found[i]) == out.end())
             out.push_back(found[i]);
+    double t3 = DevMs();
     AddStations(base, out);
+    DevLog("  chest steps: walk %.0f ms, keep %.0f ms, merge %.0f ms, stations %.0f ms", t1 - t0, t2 - t1, t3 - t2, DevMs() - t3);
     return true;
 }
 
@@ -405,8 +455,23 @@ constexpr uint32_t kOvergrowthToolItem = 3196782416;    // Tool_Building_Overgro
 
 bool ReadByte(const uint8_t* p, uint8_t& out);
 
-// The item a blueprint or an NPC's summoning staff is listed as, or 0 for anything else.
+uint32_t BlueprintToolOf(uint32_t itemId);
+
+// The item a blueprint or an NPC's summoning staff is listed as, or 0 for anything else. Remembered per item: a
+// big base asks for every stack (an item's kind doesn't change during a game session).
 uint32_t BlueprintTool(uint32_t itemId)
+{
+    static std::unordered_map<uint32_t, uint32_t> known;
+    auto it = known.find(itemId);
+    if (it != known.end())
+        return it->second;
+    uint32_t tool = BlueprintToolOf(itemId);
+    if (inv::ItemInfo(itemId)) // not before the item database is there
+        known.emplace(itemId, tool);
+    return tool;
+}
+
+uint32_t BlueprintToolOf(uint32_t itemId)
 {
     // An NPC's summoning staff ("NPC_..."): one Summoning Staff entry for all of them.
     if (_strnicmp(inv::Describe(itemId).raw, "NPC_", 4) == 0)
@@ -457,7 +522,7 @@ std::string SearchName(uint32_t itemId)
 }
 
 // Item categories as the search offers them (keen::ItemCategory order); empty: not offered.
-enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType };
+enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType, GroupLevel };
 
 // Category and rarity names as the game shows them, in its language. The UI texts
 // (*(G + 200)): + 0x10 FbUiLocaLinks; its crafting texts (+ 0xb1b0) hold the item categories at
@@ -604,17 +669,22 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
         if (!recipes::Load(info))
             return;
     }
+    double c0 = DevMs();
     bool knows = knowledge::Refresh(recipes::IsRecipe);
+    double c1 = DevMs();
     std::map<size_t, bool> unlocked; // entries with crafters: whether one of them can make it
     std::map<size_t, std::vector<uint32_t>> recipeIds; // ...and the recipes that would
-    std::vector<inv::Crafter> crafters(256);
+    std::vector<inv::Crafter> crafters(2048);
     int n = inv::FindCrafters(g_baseLo, g_baseHi, recipes::IsWorkshop, crafters.data(), static_cast<int>(crafters.size()));
+    double c2 = DevMs();
+    size_t pairs = 0;
     for (int c = 0; c < n; ++c) {
         float p[3];
         if (!inv::Position(crafters[c].entity, p))
             continue;
         ix.positions[crafters[c].entity] = {p[0], p[1], p[2]};
         const std::vector<uint32_t>* makes = recipes::Makes(crafters[c].workshop);
+        pairs += makes ? makes->size() : 0;
         for (size_t i = 0; makes && i < makes->size(); ++i) {
             uint32_t tool = BlueprintTool((*makes)[i]);
             uint32_t item = tool ? tool : (*makes)[i];
@@ -637,6 +707,7 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
             }
         }
     }
+    double c3 = DevMs();
     // Without the player's knowledge nothing is called locked. Before something is, the knowledge is read again
     // in full if it may be stale (a recipe learned since the arrays were found).
     for (auto& [entry, can] : unlocked) {
@@ -646,6 +717,8 @@ void AddCrafters(Index& ix, std::map<uint32_t, size_t>& byItem)
                     break;
         ix.entries[entry].locked = knows && !can;
     }
+    DevLog("  crafter steps: knowledge %.0f ms, find %.0f ms (%d crafters), items %.0f ms (%zu pairs), locked %.0f ms",
+           c1 - c0, c2 - c1, n, c3 - c2, pairs, DevMs() - c3);
 }
 
 // What stands in the base lights up for its own name: searching "oven" finds the ovens placed
@@ -695,12 +768,44 @@ void AddPlaced(Index& ix, std::map<uint32_t, size_t>& byItem)
 }
 
 // Every item and named chest of the base, built when the search opens.
+// The level an item reaches once fully upgraded. Each upgrade adds a level and unlocks the next of its perks, as many
+// upgrades as its rarity allows (common 1 .. legendary 5) and it has perks for; items without perks don't upgrade. The
+// first level is the kind's fixed level when it has one (Crestflame Shield: 45, 50 when upgraded five times), else the
+// level it has now. Measured on a depot server (2026-11-17): fully upgraded items sat at exactly that level.
+int MaxLevel(uint32_t itemId, uint8_t level, uint8_t rarity)
+{
+    const uint8_t* info = inv::ItemInfo(itemId);
+    uint32_t perks[5] = {}, range[2] = {};
+    if (!info || !ReadPerkIds(info, perks))
+        return level;
+    hot::Read(info + kItemLevelRange, range, sizeof(range));
+    int count = 0;
+    for (uint32_t p : perks)
+        count += p != 0;
+    if (!count)
+        return level;
+    int upgrades = (std::min)(count, rarity + 1);
+    int base = range[0] && range[0] == range[1] && range[0] <= level ? static_cast<int>(range[0]) : level;
+    return (std::max)(static_cast<int>(level), base + upgrades);
+}
+
+double DevMs()
+{
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return 1000.0 * c.QuadPart / f.QuadPart;
+}
+
 Index BuildIndex()
 {
     Index ix;
     std::vector<uint32_t> chests;
     g_step = "base chests";
-    if (!BaseChests(chests, ix.why)) {
+    double t0 = DevMs();
+    bool haveChests = BaseChests(chests, ix.why);
+    double t1 = DevMs();
+    if (!haveChests) {
         ix.inBase = ix.why == "no storage chests in this base";
         return ix;
     }
@@ -712,14 +817,23 @@ Index BuildIndex()
     std::map<std::string, size_t> byGroup;
     std::map<uint32_t, std::vector<size_t>> itemGroups;
     std::set<uint32_t> grouped; // items whose kinds are counted
+    std::map<int, size_t> byLevel; // item level -> its entry ("Level 55")
+    g_devReadMs = g_devNameMs = g_devPosMs = 0;
+    inv::CacheNames(client);
     for (uint32_t chest : chests) {
         float p[3];
-        if (!inv::Position(chest, p))
+        double q0 = DevMs();
+        bool havePos = inv::Position(chest, p);
+        g_devPosMs += DevMs() - q0;
+        if (!havePos)
             continue;
         ix.positions[chest] = {p[0], p[1], p[2]};
         g_step = "chest name";
         char name[96] = {};
-        if (inv::CustomName(client, chest, name, sizeof(name)) && name[0]) {
+        double n0 = DevMs();
+        bool named = inv::CustomName(client, chest, name, sizeof(name)) && name[0];
+        g_devNameMs += DevMs() - n0;
+        if (named) {
             std::string n = Trim(name);
             auto it = byChestName.find(Lower(n));
             if (it == byChestName.end()) {
@@ -731,7 +845,10 @@ Index BuildIndex()
         }
         g_step = "chest contents";
         inv::Owner owner;
-        if (!inv::ReadOwner(chest, owner))
+        double r0 = DevMs();
+        bool readOk = inv::ReadOwner(chest, owner);
+        g_devReadMs += DevMs() - r0;
+        if (!readOk)
             continue;
         for (int pg = 0; pg < owner.pageCount; ++pg) {
             for (const inv::Stack& s : owner.pages[pg].slots) {
@@ -778,13 +895,41 @@ Index BuildIndex()
                 addTo(e);
                 for (size_t g : itemGroups[s.itemId])
                     addTo(g);
+                // Its level, now and once fully upgraded: "Level 55" finds either.
+                uint8_t level = 0, rarity = 0;
+                if (inv::ItemLevel(s, level, rarity)) {
+                    int maxLevel = MaxLevel(s.itemId, level, rarity);
+                    for (int v : {static_cast<int>(level), maxLevel}) {
+                        auto l = byLevel.find(v);
+                        if (l == byLevel.end()) {
+                            char text[64];
+                            _snprintf_s(text, _TRUNCATE, strings::Get(strings::LevelN), v);
+                            l = byLevel.emplace(v, ix.entries.size()).first;
+                            ix.entries.push_back({text, Lower(text), Kind::Group, 0, 0, {}});
+                            ix.entries.back().group = GroupLevel;
+                        }
+                        Entry& le = ix.entries[l->second];
+                        if (std::find(le.items.begin(), le.items.end(), s.itemId) == le.items.end()) {
+                            le.items.push_back(s.itemId);
+                            le.kinds++;
+                        }
+                        addTo(l->second);
+                        if (maxLevel == level)
+                            break; // one level: counted once
+                    }
+                }
             }
         }
     }
+    inv::CacheNames(nullptr);
+    double t2 = DevMs();
+    DevLog("  contents: positions %.0f ms, names %.0f ms, pages %.0f ms", g_devPosMs, g_devNameMs, g_devReadMs);
     g_step = "crafters";
     AddCrafters(ix, byItem);
+    double t3 = DevMs();
     g_step = "placed";
     AddPlaced(ix, byItem);
+    DevLog("  index steps: chests found %.0f ms, contents %.0f ms, crafters %.0f ms, placed %.0f ms", t1 - t0, t2 - t1, t3 - t2, DevMs() - t3);
     return ix;
 }
 
@@ -819,7 +964,13 @@ Index BuildSkillIndex()
 // The skills on the Skills page, the base's chests anywhere else.
 Index BuildAny()
 {
-    return Screen() == skills::kScreen ? BuildSkillIndex() : BuildIndex();
+    LARGE_INTEGER f, a, b;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&a);
+    Index ix = Screen() == skills::kScreen ? BuildSkillIndex() : BuildIndex();
+    QueryPerformanceCounter(&b);
+    DevLog("  index built in %.0f ms", 1000.0 * (b.QuadPart - a.QuadPart) / f.QuadPart);
+    return ix;
 }
 
 using match::Rank;
@@ -835,7 +986,7 @@ void UpdateSuggestions()
         int r = q.empty() && g_browse ? 3 : Rank(e.lower, q);
         if (r < 0 && !q.empty() && e.kind == Kind::Skill && e.descLower.find(q) != std::string::npos)
             r = 4; // a skill whose description has it
-        if (r < 0) {
+        if (r < 0 && !(e.kind == Kind::Group && e.group == GroupLevel)) { // a level matches as a whole: "level 99" isn't every level
             int w = match::WordsRank(e.lower, e.descLower, words);
             if (!g_exact)
                 r = w;
@@ -928,6 +1079,8 @@ std::string Describe(const Entry& e)
         }
         return line;
     }
+    if (e.kind == Kind::Group && e.group == GroupLevel)
+        return name + kDash + strings::ItemCount(e.total, n);
     if (e.kind == Kind::Group) {
         strings::Id label = e.group == GroupRarity ? strings::KindRarity
                             : e.group == GroupPerk ? strings::KindPerk
@@ -1166,6 +1319,7 @@ bool g_escapeWasDown = false;
 
 void CloseSearch(const char* why)
 {
+    g_resumeField = false;
     ui::ReleaseDialogInput();
     g_open = false;
     LockCamera(false);
@@ -1216,6 +1370,7 @@ void EndSearch()
     g_found.clear();
     g_glowsUntil = 0;
     Unlight();
+    ShareFound(false);
 }
 
 void StartGlows(const std::vector<uint32_t>& chests)
@@ -1235,6 +1390,7 @@ void StartGlows(const std::vector<uint32_t>& chests)
     g_lastGlowDraw = g_glowsStart;
     g_step = "highlight";
     nativehighlight::Clear();
+    ShareFound(true);
 }
 
 #ifdef FIND_DEV
@@ -1275,7 +1431,7 @@ void AddByWords(const std::string& q, bool withDesc, Add&& add)
     std::vector<int> ranks;
     int best = -1;
     for (const Entry& e : g_index.entries) {
-        int r = match::WordsRank(e.lower, withDesc ? e.descLower : std::string(), words);
+        int r = e.kind == Kind::Group && e.group == GroupLevel ? -1 : match::WordsRank(e.lower, withDesc ? e.descLower : std::string(), words);
         ranks.push_back(r);
         if (r >= 0 && (best < 0 || r < best))
             best = r;
@@ -1407,6 +1563,69 @@ bool Search(const std::string& text, bool picked = false)
             }
             Log("dev owner %lu: %d pages%s", id, o.pageCount, line.c_str());
         }
+        return false;
+    }
+    if (q == "@dev-icons") {
+        g_iconPreviewUntil = GetTickCount64() + 30000;
+        for (size_t i = 0; i < sizeof(kPreviewIcons) / sizeof(kPreviewIcons[0]); ++i)
+            Log("dev icons %zu: %s (S+0x%zx)", i + 1, kPreviewIcons[i].name, kPreviewIcons[i].asset);
+        return false;
+    }
+    if (q == "@dev-compass") {
+        g_compassSign = -g_compassSign;
+        auto* client = static_cast<uint8_t*>(ui::Client());
+        float yaw = 0, px = 0, pz = 0;
+        if (client) {
+            hot::Read(client + 0x1da0, &yaw, sizeof(yaw));
+            hot::Read(client + 0x38, &px, sizeof(px));
+            hot::Read(client + 0x40, &pz, sizeof(pz));
+        }
+        Log("dev compass: sign %d, yaw %.3f, player %.1f %.1f", g_compassSign, yaw, px, pz);
+        return false;
+    }
+    if (q == "@dev-levels") {
+        // Item levels: per-instance ItemState (pide entity, +16 rarity, +17 level) against the kind's level range and perks.
+        void* reg = inv::InspectRegistry(0);
+        uint16_t stateType = 0;
+        std::map<std::string, int> stats; // "rarity r perks p" -> count
+        int upgraded = 0, total = 0;
+        for (const auto& entry : g_index.positions) {
+            inv::Owner o;
+            if (!reg || !inv::ReadOwner(entry.first, o))
+                continue;
+            for (int p = 0; p < o.pageCount; ++p)
+                for (const auto& s : o.pages[p].slots) {
+                    const uint8_t* info = s.itemId && s.pide ? inv::ItemInfo(s.itemId) : nullptr;
+                    if (!info)
+                        continue;
+                    if (!stateType) { // the pide component that starts with a slot id and the item id at +8
+                        uint16_t t[640];
+                        int n = inv::Types(reg, s.pide, t, 640);
+                        for (int k = 0; k < n && !stateType; ++k)
+                            if (auto* d = static_cast<const uint8_t*>(inv::Data(reg, t[k], s.pide))) {
+                                uint32_t id = 0; hot::Read(d + 8, &id, 4);
+                                if (id == s.itemId) stateType = t[k];
+                            }
+                        Log("dev levels: state type %u", stateType);
+                    }
+                    auto* d = stateType ? static_cast<const uint8_t*>(inv::Data(reg, stateType, s.pide)) : nullptr;
+                    if (!d) continue;
+                    uint8_t st[18] = {}; hot::Read(d, st, sizeof(st));
+                    uint32_t range[2] = {}; hot::Read(info + 0x674, range, sizeof(range));
+                    uint32_t perks[5] = {}; hot::Read(info + kItemPerkIds, perks, sizeof(perks));
+                    int np = 0; for (uint32_t pk : perks) np += pk != 0;
+                    uint16_t flags = st[14] | st[15] << 8;
+                    ++total;
+                    stats["rarity " + std::to_string(st[16]) + " perks " + std::to_string(np) + ((flags & 0x10) ? " hasLevel" : " noLevel")]++;
+                    if (range[0] == range[1] && st[17] != range[0] && upgraded < 15) {
+                        ++upgraded;
+                        Log("dev level upgraded? %s level %u range %u-%u rarity %u perks %d flags %04x", ItemName(s.itemId).c_str(), st[17], range[0], range[1], st[16], np, flags);
+                    }
+                }
+        }
+        for (const auto& [k, v] : stats)
+            Log("dev levels: %s: %d", k.c_str(), v);
+        Log("dev levels: %d items with state", total);
         return false;
     }
     if (q == "@dev-pages") {
@@ -1614,17 +1833,21 @@ bool Search(const std::string& text, bool picked = false)
     if (!exact) {
         for (const Entry& e : g_index.entries) {
             int r = Rank(e.lower, q);
-            if (r >= 0 && r <= 2)
+            bool level = e.kind == Kind::Group && e.group == GroupLevel;
+            if (r >= 0 && r <= (level ? 0 : 2)) // "level 5" is Level 5, not 50 to 59 as well
                 add(e);
         }
         if (chests.empty() && crafters.empty() && placed.empty())
             for (const Entry& e : g_index.entries)
-                if (e.lower.find(q) != std::string::npos)
+                if (e.lower.find(q) != std::string::npos && !(e.kind == Kind::Group && e.group == GroupLevel))
                     add(e);
         if (chests.empty() && crafters.empty() && placed.empty() && !g_exact)
             AddByWords(q, false, add);
     }
     if (chests.empty() && crafters.empty() && placed.empty()) {
+        // A search that finds nothing ends the one before: its chests and items kept glowing, and looked like this one's.
+        EndSearch();
+        SetFoundItems({});
         g_notice = Format(strings::NoMatch, Trim(text));
         Log("find '%s': nothing in %d chests", q.c_str(), g_index.chestCount);
 #ifdef FIND_DEV
@@ -1942,8 +2165,19 @@ void Tick()
     }
     // Enter finds even when the field lost the keyboard to a click on the list (the dialog
     // itself would only take the field back with that press).
-    if (r != 2 && Edge(4, focused && (KeysHeld(g_keys.confirm, held) || PadHeld(g_keys.confirm, pad))) && !Trim(text).empty())
+    // (The edge is read every frame: skipped while the dialog reported Enter itself, the key still held next frame
+    // counted as a second press, searched again and took the field's keyboard away again.)
+    bool confirmHeld = focused && (KeysHeld(g_keys.confirm, held) || PadHeld(g_keys.confirm, pad));
+    bool confirmPressed = Edge(4, confirmHeld);
+    if (r != 2 && confirmPressed && !Trim(text).empty())
         r = 2;
+    // After Enter found nothing the field gets the keyboard back once Enter is up (while it is held the field
+    // would take the same press again).
+    if (g_resumeField && !confirmHeld && r != 2) {
+        g_resumeField = false;
+        if (!ui::ResumeDialogField())
+            DevLog("dialog: the field could not take the keyboard back");
+    }
     if (r == 2) {
         g_step = "search";
         bool picked = g_selected >= 0 && g_selected < static_cast<int>(g_suggested.size()) &&
@@ -1954,6 +2188,7 @@ void Tick()
         }
         ui::ClearDialog(g_dialog); // the confirm press is handled; stay open with the notice
         ui::SetDialogText(g_dialog, text);
+        g_resumeField = true; // Enter ended the field's edit: it takes the keyboard back once Enter is up
         ShowMessage();
         return;
     }
@@ -2010,8 +2245,11 @@ void Tick()
         Select(g_top);
         ShowMessage();
     }
-    // The mouse: the line under it is marked; a click picks it, a second click on it finds.
+    // The mouse: the line under it is marked; a click on it finds it. It acts when the button comes back up: acting on the press
+    // closed the dialog with the button still held, and the game took the held button for an attack.
+    bool wasDown = g_navDown[3];
     bool click = Edge(3, focused && held(VK_LBUTTON));
+    bool release = wasDown && !g_navDown[3] && !held(VK_LBUTTON);
     float mx, my;
     if (click && ui::CursorInUi(mx, my) && ui::DialogCheckboxAt(g_dialog, mx, my)) {
         ToggleExact(false);
@@ -2024,6 +2262,7 @@ void Tick()
         under = line >= 0 ? g_top + line : -1;
     }
 #ifdef FIND_DEV
+    int g_dialogTestClicked = -1;
     if (g_dialogTest.clickLine >= 0) {
         float area[4];
         if (shown > 0 && g_notice.empty() && ui::DialogListArea(g_dialog, area))
@@ -2031,6 +2270,7 @@ void Tick()
                 if (ui::DialogLineAt(g_dialog, shown, area[0] + area[2] / 2, y) == g_dialogTest.clickLine - g_top) {
                     under = g_dialogTest.clickLine;
                     click = true;
+                    g_dialogTestClicked = under; // a test click has no button to let go of
                     break;
                 }
         g_dialogTest.clickLine = -1;
@@ -2040,7 +2280,18 @@ void Tick()
         g_hover = under;
         ShowMessage();
     }
-    if (click && under >= 0) {
+    static int pressedLine = -1; // the line the button went down on
+    bool act = false;
+    if (click)
+        pressedLine = under;
+    else if (release) {
+        act = under >= 0 && under == pressedLine;
+        pressedLine = -1;
+    }
+#ifdef FIND_DEV
+    if (click && under >= 0 && under == g_dialogTestClicked) { act = true; pressedLine = -1; }
+#endif
+    if (act) {
         // One click finds it (choosing first and then clicking again was one click too many).
         int index = under;
         Select(index);
@@ -2057,6 +2308,8 @@ void Tick()
 void DrawGlows()
 {
     if (g_hotPaused) { nativehighlight::Clear(); return; }
+    if (g_glows.size() != g_shared.size()) // a chest reached: it stops glowing (last frame's change, shared now)
+        ShareFound(false);
     if (g_glows.empty())
         return;
     ULONGLONG now = GetTickCount64();
@@ -2146,10 +2399,64 @@ void SafeTick()
     }
 }
 
+// The game's compass (be34c0 Hud_CompassMarkers) shows only the waypoint, pings, players and your corpse, so the chests
+// the search lights get markers of Find's own on its strip. World x is east and z north (the map mod's convention); a
+// chest's bearing is atan2(dx, dz) from the player (UI client + 0x38 x, + 0x40 z), and the strip's centre is the bearing
+// -yaw (UI client + 0x1da0), bearings growing to the right (W left of N). Measured 2026-11-17: yaw 1.071 with the strip
+// centred at 298.4 degrees, and two chests at bearing 298.6 straight ahead. 90 degrees are 314 UI units of the strip
+// (W to N at 2560 x 1600); its ends are about 78 degrees out.
+constexpr float kCompassUiPerRad = 314.0f / 1.5707964f;
+constexpr float kCompassHalfSpan = 1.36f;
+constexpr float kCompassY = 44.0f;   // the icons' centre, UI units from the top
+constexpr float kCompassIcon = 26.0f;
+constexpr int kCompassMax = 24;      // the nearest; more only crowd the strip
+
+void DrawCompass()
+{
+    if (g_glows.empty() || Screen() != kScreenPlaying)
+        return;
+    auto* client = static_cast<uint8_t*>(ui::Client());
+    HWND window = GameWindow();
+    RECT r{};
+    if (!client || !window || !GetClientRect(window, &r) || r.right <= 0 || r.bottom <= 0)
+        return;
+    float yaw = 0, px = 0, pz = 0;
+    hot::Read(client + 0x1da0, &yaw, sizeof(yaw));
+    hot::Read(client + 0x38, &px, sizeof(px));
+    hot::Read(client + 0x40, &pz, sizeof(pz));
+    float scale = (std::max)(1920.0f / static_cast<float>(r.right), 1080.0f / static_cast<float>(r.bottom));
+    float centre = static_cast<float>(r.right) * scale / 2;
+    std::vector<std::pair<float, size_t>> nearest;
+    for (size_t i = 0; i < g_glows.size(); ++i) {
+        float dx = g_glows[i].pos[0] - px, dz = g_glows[i].pos[2] - pz;
+        nearest.push_back({dx * dx + dz * dz, i});
+    }
+    std::sort(nearest.begin(), nearest.end());
+    if (nearest.size() > static_cast<size_t>(kCompassMax))
+        nearest.resize(kCompassMax);
+    float pulse = 0.8f + 0.2f * std::sin(static_cast<float>(GetTickCount64() % kIconPulseMs) / kIconPulseMs * 6.2831853f);
+    for (auto it = nearest.rbegin(); it != nearest.rend(); ++it) { // the nearest drawn last, on top
+        const Glow& g = g_glows[it->second];
+        float dx = g.pos[0] - px, dz = g.pos[2] - pz;
+        if (dx * dx + dz * dz < 4.0f)
+            continue; // standing at it: no direction
+        float rel = std::remainder(std::atan2(dx, dz) + yaw, 6.2831853f);
+        if (std::fabs(rel) > kCompassHalfSpan)
+            continue;
+        float edge = std::fabs(rel) / kCompassHalfSpan;
+        float alpha = pulse * (edge > 0.8f ? (1.0f - edge) / 0.2f : 1.0f); // fades out at the strip's ends
+        ui::DrawStorageIcon(centre + g_compassSign * rel * kCompassUiPerRad, kCompassY, kCompassIcon, kIconColour, alpha);
+    }
+}
+
 void SafeDrawGlows()
 {
     __try {
         DrawGlows();
+        DrawCompass();
+#ifdef FIND_DEV
+        DrawIconPreview();
+#endif
     } __except (FaultFilter(GetExceptionInformation(), "glows")) {
         EndSearch();
         Log("glows: fault, cleared");
@@ -2586,6 +2893,22 @@ bool Init(const Config& config)
     if (!g_originalDual)
         Log("signature not found: chest window - found items do not light up, opening a chest does not end its glow");
     return true;
+}
+
+int FoundTargets(float* xyz, uint32_t* entities, int max, uint32_t* generation)
+{
+    AcquireSRWLockShared(&g_shareLock);
+    int n = static_cast<int>(g_shared.size());
+    for (int i = 0; i < n && i < max; ++i) {
+        if (xyz)
+            memcpy(xyz + 3 * i, g_shared[i].pos, sizeof(g_shared[i].pos));
+        if (entities)
+            entities[i] = g_shared[i].chest;
+    }
+    if (generation)
+        *generation = g_shareGeneration;
+    ReleaseSRWLockShared(&g_shareLock);
+    return n;
 }
 
 } // namespace find
