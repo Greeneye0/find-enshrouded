@@ -271,6 +271,14 @@ std::string LocaKey(const uint8_t* key16)
     return std::string(t.utf8 ? t.utf8 : "", t.utf8 ? t.len : 0);
 }
 
+std::string LocaId(uint32_t id)
+{
+    Text t = MakeText("");
+    if (id && g_locaText)
+        g_locaText(&t, id);
+    return std::string(t.utf8 ? t.utf8 : "", t.utf8 ? t.len : 0);
+}
+
 Text Loca(size_t offset)
 {
     Text t = MakeText("");
@@ -371,10 +379,33 @@ struct TraceSite {
 TraceSite g_trace[96];
 int g_traceSites = 0;
 
-void TraceDraw(void* returnAddress, const float* rect)
+// The first return address on the stack inside the game exe (hooks and the loader's chain sit in between).
+uintptr_t ExeCaller(void** from)
 {
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    uintptr_t site = reinterpret_cast<uintptr_t>(returnAddress) - base;
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    uintptr_t end = base + nt->OptionalHeader.SizeOfImage;
+    for (int i = 0; i < 96; ++i) {
+        auto v = reinterpret_cast<uintptr_t>(from[i]);
+        if (v < base + 0x1000 + 6 || v >= end)
+            continue;
+        auto* c = reinterpret_cast<const uint8_t*>(v);
+        bool call = false;
+        __try {
+            call = c[-5] == 0xE8 || (c[-6] == 0xFF && c[-5] == 0x15) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0) || (c[-3] == 0xFF && (c[-2] & 0x38) == 0x10);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            call = false;
+        }
+        if (call)
+            return v - base;
+    }
+    return 0;
+}
+
+void TraceDraw(void** from, const float* rect)
+{
+    uintptr_t site = ExeCaller(from);
     for (int i = 0; i < g_traceSites; ++i) {
         if (g_trace[i].site == site) {
             ++g_trace[i].count;
@@ -390,7 +421,7 @@ void DrawRealHook(void* widget, const float* rect, uint32_t id, uint64_t colour)
     hot::Lease lease;
     if (!lease) return g_originalDrawReal(widget, rect, id, colour);
     if (g_tracing)
-        TraceDraw(_ReturnAddress(), rect);
+        TraceDraw(static_cast<void**>(_AddressOfReturnAddress()), rect);
     DrawRealHookBody(widget, rect, id, colour);
 }
 // The highlight of a wanted item's slot, over its background.
@@ -443,6 +474,7 @@ void DrawRealHookBody(void* widget, const float* rect, uint32_t id, uint64_t col
     g_inIconDraw = false;
 }
 
+
 void SlotHookBody(uint8_t** slot, void* style, void* extra);
 void SlotHook(uint8_t** slot, void* style, void* extra)
 {
@@ -486,6 +518,66 @@ bool SlotHookAvailable(uint8_t* target) {
     return hot::host->generation == 1;
 }
 
+// Item icons drawn straight into the UI draw list: 140d086a0 DrawItemIcon(G, rect, ItemInfo*, colour) fits the
+// icon as a square into rect and draws the item's rendered icon with 1411a7d60 DrawListImage(drawList, rect, image
+// id, colour); drawList = GetUiDrawList(*(G + 0x18)). The recipe grid of a crafting window (140c07d20, one cell per
+// recipe, its output item at cell + 0x20) draws its items only this way, not through doItemSlot. While lighting is
+// on, a found item's icon gets the soft glow behind it and the ring over it, in the same draw list.
+using ItemIconFn = uint8_t (*)(void* g, float* rect, uint32_t* info, uint64_t colour);
+using DrawListImageFn = void (*)(void* drawList, const float* rect, uint32_t id, uint64_t colour);
+using GetDrawListFn = void* (*)(void* ctx);
+ItemIconFn g_originalItemIcon = nullptr;
+DrawListImageFn g_drawListImage = nullptr;
+GetDrawListFn g_getDrawList = nullptr;
+// 1411a6f50 DrawListNineSlice(drawList, rect, image id, uv borders (the asset's, at + 0x10), borders, colour)
+using DrawListNineSliceFn = void (*)(void* drawList, const float* rect, uint32_t id, const float* uvBorders, const float* borders, uint64_t colour);
+DrawListNineSliceFn g_drawListNineSlice = nullptr;
+
+// A nine-slice asset (FbUiPrimitives) around rect, grown by grow on each side, into the draw list.
+void DrawListBox(void* drawList, const float* rect, size_t asset, float grow, uint64_t colour)
+{
+    uint8_t* assets = Assets();
+    uint32_t id = AssetImage(asset);
+    if (!assets || !id || !g_drawListNineSlice)
+        return;
+    float w = rect[2], h = rect[3];
+    float b = (w < h ? w : h) * 0.3f + grow;
+    float box[4] = {rect[0] - grow, rect[1] - grow, w + 2 * grow, h + 2 * grow};
+    float borders[4] = {b, b, b, b};
+    g_drawListNineSlice(drawList, box, id, reinterpret_cast<const float*>(assets + asset + 0x10), borders, colour);
+}
+int g_itemIconHits = 0;
+
+uint8_t ItemIconHookBody(void* g, float* rect, uint32_t* info, uint64_t colour);
+uint8_t ItemIconHook(void* g, float* rect, uint32_t* info, uint64_t colour)
+{
+    hot::Lease lease;
+    if (!lease) return g_originalItemIcon(g, rect, info, colour);
+    return ItemIconHookBody(g, rect, info, colour);
+}
+uint8_t ItemIconHookBody(void* g, float* rect, uint32_t* info, uint64_t colour)
+{
+    // In a chest slot (doItemSlot) the slot's own gold box already shows it.
+    if (g_iconAlpha <= 0.0f || g_inWantedSlot || g_slotItems.empty() || !info || !rect || !g || !g_drawListImage || !g_getDrawList)
+        return g_originalItemIcon(g, rect, info, colour);
+    uint32_t id = 0;
+    hot::Read(info, &id, sizeof(id));
+    if (!id || std::find(g_slotItems.begin(), g_slotItems.end(), id) == g_slotItems.end())
+        return g_originalItemIcon(g, rect, info, colour);
+    float w = rect[2], h = rect[3];
+    float side = w < h ? w : h;
+    void* ctx = nullptr;
+    hot::Read(static_cast<uint8_t*>(g) + 0x18, &ctx, sizeof(ctx));
+    void* drawList = ctx ? g_getDrawList(ctx) : nullptr;
+    if (!drawList || !g_drawListNineSlice || !(side > 4.0f) || side > 1000.0f)
+        return g_originalItemIcon(g, rect, info, colour);
+    // The same gold boxes as a found item's chest slot (DrawSlotHighlight), behind the icon.
+    ++g_itemIconHits;
+    DrawListBox(drawList, rect, kAssetGlowBoxSmall, side * 0.18f, Colour(g_iconColour, g_iconAlpha));
+    DrawListBox(drawList, rect, kAssetBoxInnerGlow, 0.0f, Colour(g_iconColour, (g_iconAlpha + 1.0f) * 0.5f));
+    return g_originalItemIcon(g, rect, info, colour);
+}
+
 bool HookIcons()
 {
     auto* image = reinterpret_cast<uint8_t*>(g_image);
@@ -513,6 +605,16 @@ bool HookIcons()
     if (!g_originalSlot)
         Log("signatures: item slot %p, nine-slice %p - found items in a chest are not boxed", slot,
             reinterpret_cast<void*>(g_nineSlice));
+    // DrawItemIcon: mov [rsp+10h], rbx; mov [rsp+20h], rbp; push rdi; sub rsp, 50h (15 bytes)
+    uint8_t* itemIcon = FindUnique("48 89 5C 24 10 48 89 6C 24 20 57 48 83 EC 50 49 8B D9 49 8B F8 48 8B E9 4D 85 C0 75 12 32 C0");
+    g_drawListImage = reinterpret_cast<DrawListImageFn>(FindUnique("48 89 5C 24 18 56 48 83 EC 50 0F B6 81 ?? ?? ?? ?? 4D 8B D9 45 8B D0 48 8B F2 48 8B D9 84 C0 74"));
+    g_getDrawList = reinterpret_cast<GetDrawListFn>(FindUnique("48 85 C9 74 0E 83 79 08 04 75 08 48 8B 81 ?? ?? ?? ?? C3 33 C0 C3"));
+    g_drawListNineSlice = reinterpret_cast<DrawListNineSliceFn>(FindUnique("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 48 81 EC 00 01 00 00 4C 8B 19 48 8B F2 48 8B 9C 24 38 01 00 00 48 8B F9"));
+    if (itemIcon && g_drawListImage && g_getDrawList && SlotHookAvailable(itemIcon))
+        g_originalItemIcon = reinterpret_cast<ItemIconFn>(InstallHookChained(itemIcon, reinterpret_cast<void*>(&ItemIconHook), 15));
+    if (!g_originalItemIcon)
+        Log("signatures: item icon %p, draw list image %p, draw list %p - found items in a crafting window do not light up",
+            itemIcon, reinterpret_cast<void*>(g_drawListImage), reinterpret_cast<void*>(g_getDrawList));
     return true;
 }
 

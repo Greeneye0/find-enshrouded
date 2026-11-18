@@ -23,6 +23,9 @@ Text Loca(size_t offset);
 // The localized text of a 16-byte text key (as ItemInfo + 0x48 holds an item's name).
 std::string LocaKey(const uint8_t* key16);
 
+// The localized text of a 32-bit text id (a LocaTagId).
+std::string LocaId(uint32_t id);
+
 bool Init();
 
 void* G();      // the UI root (DAT_14281b498)

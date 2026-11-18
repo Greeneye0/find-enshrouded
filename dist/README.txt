@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.14
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.15
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -45,7 +45,8 @@ USE
   seconds after you reach it or open it. Every pulse ends after three minutes, with your
   next search, or when you leave the base.
 - Open a matching chest and the found items in it glow gold for about five seconds, the
-  first time you open it.
+  first time you open it. The same in a crafting menu: open the lit Kitchen and the dish
+  you searched for glows in its recipe list.
 
 Find opens only while you play or have your backpack open, never while you type in chat,
 rename something or write on a signpost.
@@ -67,6 +68,8 @@ WHAT YOU CAN SEARCH FOR
   are labelled in the list:  Perk: Backstab Damage - 12 items in 3 chests
 - Item levels: "level 55" finds items that are level 55 now or will be once fully upgraded
   (Cutthroat Boots at 10/15 count for both 10 and 15).
+- Effects: what a food or potion gives, such as "oxygen" for the foods with Maximum Oxygen,
+  or "stamina". Listed as:  Effect: Maximum Oxygen - 3 items in 2 chests
 - Chest names you gave yourself with Rename. The game's own chest titles ("Storage Chest"
   and its variants) are not searched, as every unnamed chest would match.
 
@@ -121,6 +124,20 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.15
+- Search by effect: what a food or potion gives is searchable, so "oxygen" finds the foods
+  with Maximum Oxygen (listed as "Effect: Maximum Oxygen"), and "stamina" or "mana" list
+  everything that gives it. Dishes no chest holds light up the station or NPC that cooks
+  them.
+- Crafting menus: open a station or NPC that a search lit up, such as the Kitchen for a
+  dish you searched for, and the found items in its recipe list glow gold for a few
+  seconds, the same as in a chest.
+- Opening a found station or NPC counts as reaching it: its glow ends, and its star leaves
+  the compass and the map.
+Reported bugs fixed:
+- The frame rate dropped a lot while found chests were glowing: Find redid its highlight
+  work thousands of times per frame instead of once (reported by HadToRegister).
+
 1.2.14
 - Search by item level: "level 55" finds items that are level 55 now or will be once fully
   upgraded, so Cutthroat Boots at 10/15 turn up under both "level 10" and "level 15". It

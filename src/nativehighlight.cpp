@@ -47,6 +47,7 @@ struct Applied {
     // the source where the model systems left it, for placing the copy before staging
     int64_t sourcePos[3];
     float sourceRot[4], sourceScale[3], radius;
+    bool parked; // the copy is parked inside its source (not needed this frame)
 };
 using NextFn = bool (*)(void*, void*, uint32_t);
 using SetFn = void (*)(void*, const Span*, const Span*);
@@ -174,11 +175,27 @@ void RemoveProxy(Applied& a) {
     if (g_instance(a.renderer,a.proxy,true)==a.proxyInstance) {
         Span handles{&a.proxy,1}; g_delete(a.renderer,&handles);
     }
-    a.proxy=0; a.proxyInstance=nullptr;
+    a.proxy=0; a.proxyInstance=nullptr; a.parked=false;
     InterlockedDecrement(&g_copyCount);
 }
 
-volatile LONG g_stageCalls, g_viewEyes, g_placed; // dev: what the staging hook did
+// A copy not needed for now (its model right in view) is parked inside its source at a tiny scale instead of deleted:
+// creating and deleting render instances as the player walked around churned the renderer.
+void Park(Applied& a) {
+    if (!a.proxy || g_instance(a.renderer,a.proxy,true)!=a.proxyInstance || a.parked) return;
+    Spatial parked{};
+    memcpy(parked.position, a.sourcePos, sizeof(a.sourcePos));
+    memcpy(parked.rotation, a.sourceRot, sizeof(a.sourceRot));
+    for (float& f : parked.scale) f = 0.001f;
+    Span handles{&a.proxy,1}, transforms{&parked,1};
+    g_transform(a.renderer,&handles,&transforms,false);
+    a.parked = true;
+}
+
+volatile LONG g_stageCalls, g_viewEyes, g_placed, g_applies, g_appliesSkipped; // dev: what the staging hook and Apply did
+// Frames, counted at the frame's staging call. The model systems end an iteration many times a frame (thousands of
+// Apply calls a second were measured): the highlight and copy work is done once per frame for each system and renderer.
+volatile LONG g_frame;
 // This frame's eye: the client's view matrix, else the renderer's camera.
 bool Eye(void* renderer, double eye[3], double forward[3]) {
     uint8_t* client = g_client.load(std::memory_order_relaxed);
@@ -219,7 +236,7 @@ int UpdateProxy(Applied& a, uint8_t* source) {
     double eye[3], forward[3];
     if (!Eye(a.renderer, eye, forward)) { RemoveProxy(a); return -1; }
     if (!detail::PerspectiveCopy(eye, forward, Nearest(eye), transform, a.radius)) {
-        RemoveProxy(a); // right before the eye (or behind it): nothing to show through
+        Park(a); // right before the eye (or behind it): nothing to show through
         return 0;
     }
     if (a.proxy && g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) { // gone with its renderer (a world left)
@@ -227,6 +244,7 @@ int UpdateProxy(Applied& a, uint8_t* source) {
         InterlockedDecrement(&g_copyCount);
     }
     const bool created = !a.proxy;
+    a.parked = false;
     if (created) {
         a.proxy=g_create(a.renderer,resource+0x18,&transform);
         if (!a.proxy) return -1;
@@ -269,6 +287,19 @@ void Apply(void* iter, void* view, const System& system) {
     if (!scene) return;
     auto renderer = Read<void*>(scene, 0x98);
     if (!renderer) return;
+    {
+        // Once per frame for this system and renderer (without the staging hook: once per 8 ms).
+        static struct { void* renderer; LONG frame; } done[2][4]{};
+        LONG frame = g_stageNext ? InterlockedCompareExchange(&g_frame, 0, 0) : static_cast<LONG>(GetTickCount64() / 8);
+        auto& slots = done[which];
+        int k = 0;
+        while (k < 4 && slots[k].renderer && slots[k].renderer != renderer) ++k;
+        if (k == 4) k = static_cast<int>(reinterpret_cast<uintptr_t>(renderer) >> 4 & 3); // more renderers than slots: share one
+        if (slots[k].renderer == renderer && slots[k].frame == frame) { InterlockedIncrement(&g_appliesSkipped); return; }
+        slots[k].renderer = renderer;
+        slots[k].frame = frame;
+        InterlockedIncrement(&g_applies);
+    }
     // Render jobs can use column views with no registry in state+0x30. The
     // client render registry is separate from the authoritative inventory one.
     void* registries[16]{};
@@ -407,7 +438,8 @@ void PlaceCopiesInner(void* renderer) {
         memcpy(transform.position, a.sourcePos, sizeof(a.sourcePos));
         memcpy(transform.rotation, a.sourceRot, sizeof(a.sourceRot));
         memcpy(transform.scale, a.sourceScale, sizeof(a.sourceScale));
-        if (!detail::PerspectiveCopy(eye, forward, nearest, transform, a.radius)) continue;
+        if (!detail::PerspectiveCopy(eye, forward, nearest, transform, a.radius)) { Park(a); continue; }
+        a.parked = false;
         Span handles{&a.proxy,1},transforms{&transform,1};
         g_transform(a.renderer,&handles,&transforms,false);
         InterlockedIncrement(&g_placed);
@@ -415,8 +447,9 @@ void PlaceCopiesInner(void* renderer) {
     static ULONGLONG at;
     if (GetTickCount64() - at > 3000) {
         at = GetTickCount64();
-        DevLog("copies: %ld staging calls, %ld with the client's view, %ld placements in 3 s; eye %.2f %.2f %.2f",
-            InterlockedExchange(&g_stageCalls, 0), InterlockedExchange(&g_viewEyes, 0), InterlockedExchange(&g_placed, 0), eye[0], eye[1], eye[2]);
+        DevLog("copies: %ld staging calls, %ld with the client's view, %ld placements, %ld updates (%ld skipped) in 3 s; eye %.2f %.2f %.2f",
+            InterlockedExchange(&g_stageCalls, 0), InterlockedExchange(&g_viewEyes, 0), InterlockedExchange(&g_placed, 0),
+            InterlockedExchange(&g_applies, 0), InterlockedExchange(&g_appliesSkipped, 0), eye[0], eye[1], eye[2]);
     }
 }
 void PlaceCopies(void* renderer) {
@@ -430,6 +463,7 @@ void PlaceCopies(void* renderer) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 void StageHook(void* renderer) {
+    InterlockedIncrement(&g_frame);
     { hot::Lease lease; if (lease) PlaceCopies(renderer); }
     g_stageNext(renderer);
 }

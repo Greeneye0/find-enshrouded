@@ -31,6 +31,7 @@ enum Id {
     SkillsUnreadable, // the Skills page: its skills can't be read (game data not found)
     ExactMatch,     // the dialog's toggle: only names holding the whole text
     LevelN,         // %d: an item level, as a kind ("Level 55": items at that level, now or once fully upgraded)
+    KindEffect,     // label before what a food or potion gives ("Effect: Maximum Oxygen")
     Count
 };
 

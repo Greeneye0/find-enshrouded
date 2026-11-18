@@ -1,0 +1,5 @@
+Search by effect: what a food or potion gives is searchable, so "oxygen" finds the foods with Maximum Oxygen (listed as "Effect: Maximum Oxygen"), and "stamina" or "mana" list everything that gives it. Dishes no chest holds light up the station or NPC that cooks them.
+Crafting menus: open a station or NPC that a search lit up, such as the Kitchen for a dish you searched for, and the found items in its recipe list glow gold for a few seconds, the same as in a chest.
+Opening a found station or NPC counts as reaching it: its glow ends, and its star leaves the compass and the map.
+Reported bugs fixed:
+The frame rate dropped a lot while found chests were glowing: Find redid its highlight work thousands of times per frame instead of once (reported by HadToRegister).

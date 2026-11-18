@@ -36,7 +36,8 @@ servers and other players need nothing. Find only reads your chests; it never mo
    (with [The Worst Map Mod](https://www.nexusmods.com/enshrouded/mods/220) 1.3.54 or newer
    they show on the World Map and the minimap too: Find exports `FindFoundTargets` for it).
    Open one and the found items in it pulse gold for about five
-   seconds, the first time you open it. A chest's pulse ends a few seconds after you reach it
+   seconds, the first time you open it. The same in a crafting menu: open a lit station or NPC
+   and the found items glow in its recipe list. A chest's pulse ends a few seconds after you reach it
    or open it; every pulse ends after three minutes, with your next search, or when you leave
    the base.
 
@@ -76,6 +77,8 @@ Restart the game after changing them.
   the recipe.
 - **Item levels**: `level 55` finds items that are level 55 now or will be once fully
   upgraded (Cutthroat Boots at 10/15 count for both 10 and 15).
+- **Effects**: what a food or potion gives, such as `oxygen` for the foods with Maximum Oxygen,
+  or `stamina`. Dishes no chest holds light up the station or NPC that cooks them.
 - **Chest names you gave yourself** with Rename. The game's own chest titles,
   "Storage Chest" and its variants (Large Storage Chest and the like), are not searched:
   every unnamed chest would match.

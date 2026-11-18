@@ -90,6 +90,8 @@ constexpr size_t kItemCaption = 0x58;   // ItemInfo: CaptionLocaTag, the type li
 constexpr size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
 constexpr uint8_t kCategoryBlueprints = 10;
 constexpr size_t kItemPerkIds = 0x658;  // ItemInfo: PerkId[5], the perks its upgrades unlock
+constexpr size_t kItemUiValues = 0x5e8;     // ItemInfo: BlobArray<ImpactUiValue> uiValues (0x28 each, +0 LocaTagId)
+constexpr size_t kItemUiBuffValues = 0x5f0; // ItemInfo: ... uiBuffValues (what a food or potion gives: "Maximum Oxygen")
 constexpr size_t kItemLevelRange = 0x674; // ItemInfo: itemLevelRange {minLevel, maxLevel} (uint32)
 constexpr size_t kUiClientPerks = 0x466800; // UI client: the perk registry (as the item tooltip uses it)
 // A glow lasts until the next search, at most glow_seconds (find.ini), or until you come within
@@ -109,6 +111,7 @@ constexpr uint8_t kScreenInventory = 9;
 // InfoPopup (49) shows the news.
 constexpr uint8_t kScreenBehindSearch = 24;
 constexpr uint8_t kScreenSystemMenu = 2;
+constexpr uint8_t kScreenCrafting = 25; // a station's or an NPC's crafting window (the Kitchen)
 constexpr size_t kWindowMouseScale = 0x68; // game window object: raw mouse -> camera factor
 constexpr size_t kDispatchCmdSize = 0x410;
 constexpr float kOpenedChestMeters = 5.0f;   // an opened chest window belongs to the nearest glow this close
@@ -180,6 +183,7 @@ struct Entry {
     bool locked = false;            // Item: none of them can make it yet (recipe not unlocked)
     std::vector<uint32_t> placed;   // Item: where it stands in the base (a station, bed, torch...)
     uint32_t kinds = 0; // Group: how many different items
+    uint32_t made = 0, madeLocked = 0; // Group (effects): items only the base's crafters have, and of those not unlocked
     std::vector<uint32_t> items; // Group: those items
     uint8_t group = 0;           // Group: what kind (GroupCategory...)
     uint8_t rarity = 0;          // Group of a rarity: which (1 uncommon .. 4 legendary)
@@ -522,7 +526,7 @@ std::string SearchName(uint32_t itemId)
 }
 
 // Item categories as the search offers them (keen::ItemCategory order); empty: not offered.
-enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType, GroupLevel };
+enum Group : uint8_t { GroupNone, GroupCategory, GroupRarity, GroupPerk, GroupItemType, GroupLevel, GroupEffect };
 
 // Category and rarity names as the game shows them, in its language. The UI texts
 // (*(G + 200)): + 0x10 FbUiLocaLinks; its crafting texts (+ 0xb1b0) hold the item categories at
@@ -632,7 +636,39 @@ std::string PerkName(uint32_t id)
     return name;
 }
 
-// The groups an item belongs to: its category, rarity, perks and type line.
+// What a food or potion gives, as its tooltip lists it ("Maximum Oxygen", "Health Regeneration"):
+// ItemInfo uiValues, BlobArray<ImpactUiValue> {int32 offset from the field, uint32 count}, 0x28
+// each: +0 LocaTagId, +4 format, +8 value. Only consumables: other items list mechanics there
+// (Attack Speed, Radius, Item Level). Left out: losses (raw meat's Health -50) and how long it
+// lasts (Duration, Minutes Duration: every label holding the game's own word for it).
+constexpr uint8_t kCategoryConsumables = 7;
+constexpr uint32_t kLocaDuration = 0x86a75e07; // the uiValues label "Duration"
+std::string g_durationWord; // lower case, set per index build
+
+std::vector<std::string> ItemEffects(const uint8_t* info, uint8_t category)
+{
+    std::vector<std::string> effects;
+    if (category != kCategoryConsumables)
+        return effects;
+    int32_t blob[2] = {};
+    hot::Read(info + kItemUiValues, blob, sizeof(blob));
+    if (!blob[0] || blob[1] <= 0 || blob[1] > 32)
+        return effects;
+    for (int32_t k = 0; k < blob[1]; ++k) {
+        int32_t v[3] = {};
+        hot::Read(info + kItemUiValues + blob[0] + 0x28 * k, v, sizeof(v));
+        if (!v[0] || v[2] <= 0)
+            continue;
+        std::string label = Trim(ui::LocaId(static_cast<uint32_t>(v[0])));
+        if (label.empty() || label.size() >= 48 || (!g_durationWord.empty() && Lower(label).find(g_durationWord) != std::string::npos))
+            continue;
+        if (std::find(effects.begin(), effects.end(), label) == effects.end())
+            effects.push_back(label);
+    }
+    return effects;
+}
+
+// The groups an item belongs to: its category, rarity, perks, type line and effects.
 std::vector<std::pair<std::string, uint8_t>> ItemGroups(uint32_t itemId, const std::string& itemName)
 {
     std::vector<std::pair<std::string, uint8_t>> groups;
@@ -656,6 +692,9 @@ std::vector<std::pair<std::string, uint8_t>> ItemGroups(uint32_t itemId, const s
     std::string caption = Trim(ui::LocaKey(info + kItemCaption));
     if (!caption.empty() && caption.size() < 48 && Lower(caption) != Lower(itemName))
         groups.push_back({caption, GroupItemType});
+    for (const std::string& effect : ItemEffects(info, category))
+        if (std::find(groups.begin(), groups.end(), std::make_pair(effect, uint8_t{GroupEffect})) == groups.end())
+            groups.push_back({effect, GroupEffect});
     return groups;
 }
 
@@ -810,6 +849,7 @@ Index BuildIndex()
         return ix;
     }
     ix.ok = true;
+    g_durationWord = Lower(Trim(ui::LocaId(kLocaDuration)));
     ix.chestCount = static_cast<int>(chests.size());
     void* client = GameClient();
     std::map<uint32_t, size_t> byItem;
@@ -926,6 +966,33 @@ Index BuildIndex()
     DevLog("  contents: positions %.0f ms, names %.0f ms, pages %.0f ms", g_devPosMs, g_devNameMs, g_devReadMs);
     g_step = "crafters";
     AddCrafters(ix, byItem);
+    // Effects of what the base can make but no chest holds ("oxygen": the Kitchen, for Sushi).
+    for (const auto& [itemId, e] : byItem) {
+        if (grouped.count(itemId) || ix.entries[e].crafters.empty())
+            continue;
+        const uint8_t* info = inv::ItemInfo(itemId);
+        uint8_t category;
+        if (!info || !ReadByte(info + kItemCategory, category))
+            continue;
+        for (const std::string& effect : ItemEffects(info, category)) {
+            std::string key = std::to_string(GroupEffect) + ":" + Lower(effect);
+            auto g = byGroup.find(key);
+            if (g == byGroup.end()) {
+                g = byGroup.emplace(key, ix.entries.size()).first;
+                ix.entries.push_back({effect, Lower(effect), Kind::Group, 0, 0, {}});
+                ix.entries.back().group = GroupEffect;
+            }
+            Entry& ge = ix.entries[g->second];
+            const Entry& item = ix.entries[e];
+            ge.kinds++;
+            ge.items.push_back(itemId);
+            ge.made++;
+            ge.madeLocked += item.locked ? 1 : 0;
+            for (uint32_t c : item.crafters)
+                if (std::find(ge.crafters.begin(), ge.crafters.end(), c) == ge.crafters.end())
+                    ge.crafters.push_back(c);
+        }
+    }
     double t3 = DevMs();
     g_step = "placed";
     AddPlaced(ix, byItem);
@@ -1085,8 +1152,11 @@ std::string Describe(const Entry& e)
         strings::Id label = e.group == GroupRarity ? strings::KindRarity
                             : e.group == GroupPerk ? strings::KindPerk
                             : e.group == GroupItemType ? strings::KindItemType
+                            : e.group == GroupEffect ? strings::KindEffect
                                                        : strings::KindCategory;
-        return std::string(strings::Get(label)) + ": " + name + kDash + strings::KindCount(e.kinds, n);
+        std::string count = !n && e.made ? strings::Get(e.made == e.madeLocked ? strings::MadeHereLocked : strings::MadeHere)
+                                         : strings::KindCount(e.kinds - e.made, n);
+        return std::string(strings::Get(label)) + ": " + name + kDash + count;
     }
     if (!n && !e.placed.empty())
         return name + kDash + strings::PlacedCount(static_cast<int>(e.placed.size()));
@@ -1583,6 +1653,34 @@ bool Search(const std::string& text, bool picked = false)
         Log("dev compass: sign %d, yaw %.3f, player %.1f %.1f", g_compassSign, yaw, px, pz);
         return false;
     }
+    if (q == "@dev-effects") {
+        // Each indexed item's uiValues / uiBuffValues labels.
+        int shown = 0;
+        for (const auto& e : g_index.entries) {
+            if (e.kind != Kind::Item || shown >= 400)
+                continue;
+            const uint8_t* info = inv::ItemInfo(e.itemId);
+            if (!info)
+                continue;
+            std::string line;
+            for (size_t field : {kItemUiValues, kItemUiBuffValues}) {
+                int32_t blob[2] = {};
+                hot::Read(info + field, blob, sizeof(blob));
+                line += field == kItemUiValues ? " | ui:" : " | buff:";
+                for (int32_t k = 0; blob[0] && k < blob[1] && k < 12; ++k) {
+                    uint32_t v[3] = {};
+                    hot::Read(info + field + blob[0] + 0x28 * k, v, sizeof(v));
+                    char extra[32]; snprintf(extra, sizeof(extra), " id %08x fmt %u", v[0], v[1] & 0xff);
+                    line += " [" + ui::LocaId(v[0]) + " " + std::to_string(static_cast<int32_t>(v[2])) + extra + "]";
+                }
+            }
+            if (line.find('[') != std::string::npos) {
+                ++shown;
+                Log("dev effects %s:%s", e.name.c_str(), line.c_str());
+            }
+        }
+        return false;
+    }
     if (q == "@dev-levels") {
         // Item levels: per-instance ItemState (pide entity, +16 rarity, +17 level) against the kind's level range and perks.
         void* reg = inv::InspectRegistry(0);
@@ -1972,6 +2070,49 @@ void FindPadFilter(XINPUT_GAMEPAD& pad, DWORD user)
     pad.wButtons = hide.Apply(pad.wButtons, user, mask);
 }
 
+// A crafting window (a station's or an NPC's): opened from playing near a found station or NPC,
+// the found items light up in its recipe list for a few seconds, as in a found chest's window.
+bool ChestWindowOpened();
+int FaultFilter(EXCEPTION_POINTERS* e, const char* what);
+int g_lastScreen = -1;
+bool g_craftLight = false;
+ULONGLONG g_craftOpenedAt = 0;
+void CraftingWindowTick()
+{
+    ULONGLONG now = GetTickCount64();
+    int screen = Screen();
+    if (screen != g_lastScreen) {
+        bool fromPlaying = g_lastScreen == kScreenPlaying;
+        g_lastScreen = screen;
+        if (g_craftLight)
+            ui::LightIcons(0, 0.0f);
+        g_craftLight = false;
+        // Only the crafting screen: a chest's screen (22) is the chest window's, which lights its own items once.
+        bool window = fromPlaying && !g_open && screen == kScreenCrafting;
+        if (window && !g_foundItems.empty() && now < g_glowsUntil) {
+            __try {
+                g_craftLight = ChestWindowOpened();
+            } __except (FaultFilter(GetExceptionInformation(), "crafting window")) {
+                g_craftLight = false;
+            }
+            g_craftOpenedAt = now;
+            DevLog("screen %d opened from playing: %s", screen, g_craftLight ? "found items light up" : "not at a found station");
+        }
+    }
+    if (!g_craftLight)
+        return;
+    ULONGLONG shown = now - g_craftOpenedAt;
+    if (shown >= kIconShowMs) {
+        ui::LightIcons(0, 0.0f);
+        g_craftLight = false;
+        return;
+    }
+    float pulse = 0.55f + 0.35f * std::sin(static_cast<float>(now % kIconPulseMs) / kIconPulseMs * 6.2831853f);
+    if (shown > kIconShowMs - kFadeOutMs)
+        pulse *= static_cast<float>(kIconShowMs - shown) / kFadeOutMs;
+    ui::LightIcons(kIconColour, pulse);
+}
+
 SRWLOCK g_requestLock = SRWLOCK_INIT;
 char g_request[128]{};
 bool g_requestPending = false;
@@ -1987,6 +2128,7 @@ void Tick()
         g_chestWindowAt = 0;
     }
     if (g_hotPaused) return;
+    CraftingWindowTick();
     skills::Draw(Screen());
     char request[128]{};
     bool pending;
