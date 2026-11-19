@@ -18,6 +18,7 @@ struct Config {
     Bindings keys;
     GlowTimes glow;
     bool exactMatch = false; // only names holding the whole text, not its words one by one
+    int throughWalls = 0;    // what shows a lit chest, NPC or station through walls: 0 glow (3D copy), 1 icon, 2 HUD silhouette
 };
 
 // Reads the keys from find.ini again when it changed (checked at most every 2 s); true if it did.

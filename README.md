@@ -62,6 +62,7 @@ are added to it) holds:
 | `near_meters` | `2.5` | coming this close to a found chest counts as reaching it (0.5-20) |
 | `near_seconds` | `3` | a chest stops glowing this long after you reach or open it (0-60) |
 | `exact_match`, `exact_key` | `0`, `Ctrl+E, Pad:Y` | the Exact match checkbox (saved when you switch it in the search box) and what switches it |
+| `through_walls` | `glow` | how lit chests, NPCs and stations show through walls: `glow` (a glowing 3D copy), `icon` (a marker over each, lighter on the graphics card) or `silhouette` (an outline on the HUD) |
 
 Restart the game after changing them.
 

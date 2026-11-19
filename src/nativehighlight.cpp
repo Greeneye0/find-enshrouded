@@ -223,7 +223,12 @@ double Nearest(const double eye[3]) {
 
 // The lit model's copy where the model is now (created on the first call): 1 there is one, 0 none needed (the model
 // is right before the eye, in view), -1 none could be made (the silhouette shows it instead).
+// find.ini through_walls: 0 a 3D copy (the default), 1 none here (Find draws an icon), 2 the HUD silhouette.
+// A copy moved every frame costs the graphics card (HadToRegister's RTX 3050 dropped to 1-10 fps with one lit).
+volatile LONG g_throughWalls;
+volatile LONG g_devNoPulse; // dev switch for the performance tests
 int UpdateProxy(Applied& a, uint8_t* source) {
+    if (LONG mode = InterlockedCompareExchange(&g_throughWalls, 0, 0)) { RemoveProxy(a); return mode == 2 ? -1 : 0; }
     if (!g_create || !g_transform || !g_delete || !g_bind) return -1;
     auto resource = Read<uint8_t*>(source, 0x108);
     auto asset = resource ? Read<uint8_t*>(resource, 0x38) : nullptr;
@@ -250,8 +255,9 @@ int UpdateProxy(Applied& a, uint8_t* source) {
         if (!a.proxy) return -1;
         a.proxyInstance=g_instance(a.renderer,a.proxy,true);
         InterlockedIncrement(&g_copyCount);
-        DevLog("copy %08x of %08x (resource kind %u, binding %u)", a.proxy, a.handle, Read<uint8_t>(resource, 0x14),
-            Read<uint32_t>(source, 0x130));
+        DevLog("copy %08x of %08x (resource kind %u, binding %u, attachments %08x/%08x, copy's %08x/%08x)", a.proxy, a.handle,
+            Read<uint8_t>(resource, 0x14), Read<uint32_t>(source, 0x130), Read<uint32_t>(resource, 0x6c), Read<uint32_t>(resource, 0x70),
+            Read<uint32_t>(a.proxyInstance, 0x134), Read<uint32_t>(a.proxyInstance, 0x138));
     }
     Span handles{&a.proxy,1}, transforms{&transform,1};
     if (uint32_t binding=Read<uint32_t>(source,0x130)) g_bind(a.renderer,&handles,binding);
@@ -462,8 +468,19 @@ void PlaceCopies(void* renderer) {
     }
     ReleaseSRWLockExclusive(&g_lock);
 }
+volatile LONG g_devFps; // dev: log frames a second
 void StageHook(void* renderer) {
     InterlockedIncrement(&g_frame);
+    if (InterlockedCompareExchange(&g_devFps, 0, 0)) {
+        static ULONGLONG at; static LONG frames;
+        ++frames;
+        ULONGLONG now = GetTickCount64();
+        if (!at) at = now;
+        if (now - at >= 3000) {
+            DevLog("fps: %.1f (%ld copies, %u lit)", frames * 1000.0 / (now - at), InterlockedCompareExchange(&g_copyCount, 0, 0), g_appliedCount);
+            at = now; frames = 0;
+        }
+    }
     { hot::Lease lease; if (lease) PlaceCopies(renderer); }
     g_stageNext(renderer);
 }
@@ -478,7 +495,7 @@ float* ColorHook(float* out, uint32_t color)
 float* ColorHookBody(float* out, uint32_t color, void* returnSite)
 {
     void* caller = returnSite;
-    if (InterlockedCompareExchange(&g_pulsing, 0, 0) &&
+    if (InterlockedCompareExchange(&g_pulsing, 0, 0) && !InterlockedCompareExchange(&g_devNoPulse, 0, 0) &&
         (caller == g_paletteReturns[0] || caller == g_paletteReturns[1])) {
         float phase = static_cast<float>(GetTickCount64() % 1800) / 1800.0f;
         float gain = 0.38f + 0.62f * (0.5f - 0.5f * std::cos(phase * 6.283185307f));
@@ -508,6 +525,12 @@ void SetView(void* client, const float player[3]) {
     }
 }
 static volatile LONG g_stressTest=0;
+void SetThroughWalls(int mode) { InterlockedExchange(&g_throughWalls, mode); }
+int ThroughWalls() { return static_cast<int>(InterlockedCompareExchange(&g_throughWalls, 0, 0)); }
+void SetDevSwitch(int which, bool on) {
+    if (which == 3) InterlockedExchange(&g_devFps, on);
+    else if (which == 1) InterlockedExchange(&g_devNoPulse, on);
+}
 void SetStressTest(bool enabled) { InterlockedExchange(&g_stressTest,enabled?1:0); }
 void DrawSilhouettes() {
     silhouette::Snapshot snapshots[256];unsigned count=0;

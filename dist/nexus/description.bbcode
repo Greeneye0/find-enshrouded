@@ -74,6 +74,7 @@ Open the Skills page and press [b]Shift+F[/b] (LB+X on a controller) to search t
 [*][b]near_meters[/b] = 2.5: coming this close to a found chest counts as reaching it (0.5-20).
 [*][b]near_seconds[/b] = 3: a chest stops glowing this long after you reach or open it (0-60).
 [*][b]exact_match[/b] = 0: the Exact match checkbox, saved when you switch it in the search box. [b]exact_key[/b] = Ctrl+E, Pad:Y switches it.
+[*][b]through_walls[/b] = glow: how lit chests, NPCs and stations show through walls. [b]glow[/b]: a glowing 3D copy. [b]icon[/b]: a marker over each, lighter on the graphics card (try it if your frame rate drops while things glow). [b]silhouette[/b]: an outline on the HUD.
 [/list]
 
 [line]
@@ -116,6 +117,11 @@ If something doesn't work, please post these two files from the game folder with
 [line]
 
 [size=4][b]Changelog[/b][/size]
+
+[b]1.2.16[/b]
+[list]
+[*]New setting [b]through_walls[/b] in [i]find.ini[/i]: how lit chests, NPCs and stations show through walls. [b]glow[/b] (the default) is the glowing 3D copy, [b]icon[/b] a marker over each, lighter on the graphics card, [b]silhouette[/b] an outline on the HUD. Try [b]icon[/b] if your frame rate drops while things glow (added for HadToRegister's report).
+[/list]
 
 [b]1.2.15[/b]
 [list]
@@ -207,19 +213,6 @@ Reported bugs fixed:
 Reported bugs fixed:
 [list]
 [*]The window in Ukrainian on a game set to Russian (reported by mrniced).
-[/list]
-
-[b]1.2.6[/b]
-[list]
-[*]Updated for the 3 November 2026 game patch (game build 1285601). The game's text box id changed, so after a search the game stayed in typing mode: menus couldn't be backed out of (for example after talking to an NPC), and search results couldn't be clicked. Find now reads that id from the game itself, so a patch can't break this the same way again.
-[*]Chests glow through walls again: the smooth silhouette drawing was off after the patch.
-[*]A search closed in the same instant it opened no longer leaves the game on its hidden screen with the HUD gone.
-[*][i]find.log[/i] no longer grows without end: at 10 MB it rolls over into [i]find.old.log[/i].
-[/list]
-Reported bugs fixed:
-[list]
-[*]Stuck in menus after a search (reported by bigeasier and spirevipp).
-[*]No glow through walls, and search results couldn't be clicked (reported by Sh1On1).
 [/list]
 
 [line]

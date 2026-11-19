@@ -35,6 +35,7 @@
 #include <unordered_map>
 #include <set>
 #include <sstream>
+#include "projection_frame.h"
 #include <string>
 #include <vector>
 #include "config.h"
@@ -2499,7 +2500,20 @@ void DrawGlows()
         ++i;
     }
     nativehighlight::SetView(ui::Client(), player); // the client whose view matrix (+0x1d20) the screen projection uses
-    nativehighlight::Publish(targets.data(), static_cast<unsigned>(targets.size()));
+    nativehighlight::Publish(targets.data(), static_cast<unsigned>(targets.size())); // the gold glow where it's in view
+    if (nativehighlight::ThroughWalls() == 1) { // find.ini through_walls = icon: a marker over each, no 3D copies
+        ui::ProjectionFrame camera;
+        if (!ui::CaptureProjection(camera)) return;
+        for (const auto& target : targets) {
+            float pos[]{target.position[0], target.position[1] + 1.f, target.position[2]};
+            float x, y, depth;
+            if (!camera.Project(pos, x, y, depth)) continue;
+            if (x < camera.viewport[0] || y < camera.viewport[1] ||
+                x >= camera.viewport[0] + camera.viewport[2] || y >= camera.viewport[1] + camera.viewport[3]) continue;
+            ui::DrawMarker(x, y, target.alpha);
+        }
+        return;
+    }
     nativehighlight::DrawSilhouettes();
 }
 
@@ -2972,6 +2986,13 @@ bool QueueSearch(const char* text)
 #ifdef FIND_DEV
     if (!strcmp(text,"@dev-profile-start")) { InterlockedExchange(&g_profileCommand,1); return true; }
     if (!strcmp(text,"@dev-profile-stop")) { InterlockedExchange(&g_profileCommand,2); return true; }
+    if (!strcmp(text,"@dev-walls-glow")) { nativehighlight::SetThroughWalls(0); return true; }
+    if (!strcmp(text,"@dev-walls-icon")) { nativehighlight::SetThroughWalls(1); return true; }
+    if (!strcmp(text,"@dev-walls-silhouette")) { nativehighlight::SetThroughWalls(2); return true; }
+    if (!strcmp(text,"@dev-fps-on")) { nativehighlight::SetDevSwitch(3,true); return true; }
+    if (!strcmp(text,"@dev-fps-off")) { nativehighlight::SetDevSwitch(3,false); return true; }
+    if (!strcmp(text,"@dev-pulse-off")) { nativehighlight::SetDevSwitch(1,true); return true; }
+    if (!strcmp(text,"@dev-pulse-on")) { nativehighlight::SetDevSwitch(1,false); return true; }
     if (!strcmp(text,"@dev-hold-60s")) { InterlockedExchange64(&g_devHoldUntil,GetTickCount64()+60000); return true; }
     if (!strcmp(text,"@dev-hold-off")) { nativehighlight::SetStressTest(false); InterlockedExchange64(&g_devHoldUntil,0); return true; }
 #endif
@@ -2986,6 +3007,7 @@ bool Init(const Config& config)
 {
     g_keys = config.keys;
     g_exact = config.exactMatch;
+    nativehighlight::SetThroughWalls(config.throughWalls);
     greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
     g_arrivedMeters = config.glow.nearMeters;

@@ -47,6 +47,12 @@ constexpr char kExactText[] =
     ";   holding the whole text; 0: also names with all its words (\"ring mana\": Ring of Mana), then some of them.\n"
     "exact_key = Ctrl+E, Pad:Y\n";
 constexpr char kExactKey[] = "exact_match";
+constexpr char kWallsKey[] = "through_walls";
+constexpr char kWallsText[] =
+    "; through_walls: how what Find lights shows through walls. glow: a glowing 3D copy of the chest, NPC or\n"
+    ";   station (the default). icon: a marker over it, lighter on the graphics card. silhouette: its outline\n"
+    ";   drawn on the HUD. Takes effect the next time the game starts.\n";
+constexpr const char* kWallsModes[] = {"glow", "icon", "silhouette"};
 
 struct BindingSetting {
     const char* key;
@@ -120,6 +126,7 @@ void WriteDefaults()
     for (const Number& n : kNumbers)
         WriteNumber(f, n);
     fprintf(f, "%s%s = 0\n", kExactText, kExactKey);
+    fprintf(f, "%s%s = glow\n", kWallsText, kWallsKey);
     fclose(f);
 }
 
@@ -174,7 +181,7 @@ Config LoadConfig()
         return c;
     }
     bool seen[sizeof(kNumbers) / sizeof(kNumbers[0])] = {};
-    bool dialogKeysSeen = false, exactSeen = false;
+    bool dialogKeysSeen = false, exactSeen = false, wallsSeen = false;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         std::string s = Trim(line);
@@ -189,6 +196,17 @@ Config LoadConfig()
         ReadBindingLine(key, value, c.keys);
         dialogKeysSeen = dialogKeysSeen || key == "confirm_key";
         exactSeen = exactSeen || key == "exact_key";
+        if (key == kWallsKey) {
+            wallsSeen = true;
+            int mode = -1;
+            for (int m = 0; m < 3; ++m)
+                if (_stricmp(value.c_str(), kWallsModes[m]) == 0)
+                    mode = m;
+            if (mode < 0)
+                Log("find.ini: through_walls '%s' is not glow, icon or silhouette, using glow", value.c_str());
+            else
+                c.throughWalls = mode;
+        }
         if (key == kExactKey)
             c.exactMatch = value == "1" || _stricmp(value.c_str(), "on") == 0 || _stricmp(value.c_str(), "true") == 0;
         for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {
@@ -218,6 +236,8 @@ Config LoadConfig()
         fputs(kDialogKeysText, add);
     if (!exactSeen && (add || (add = fopen(greeneye::DataPath(kFile), "a"))))
         fprintf(add, "%sexact_match = %d\n", kExactText, c.exactMatch ? 1 : 0);
+    if (!wallsSeen && (add || (add = fopen(greeneye::DataPath(kFile), "a"))))
+        fprintf(add, "%s%s = glow\n", kWallsText, kWallsKey);
     if (add)
         fclose(add);
     return c;

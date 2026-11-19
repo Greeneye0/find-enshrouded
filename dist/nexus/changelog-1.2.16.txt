@@ -1,0 +1,1 @@
+New setting through_walls in find.ini: how lit chests, NPCs and stations show through walls. glow (the default) is the glowing 3D copy, icon a marker over each, lighter on the graphics card, silhouette an outline on the HUD. Try icon if your frame rate drops while things glow (added for HadToRegister's report).

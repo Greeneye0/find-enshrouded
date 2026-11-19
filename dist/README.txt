@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.15
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.16
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -90,6 +90,9 @@ find.ini lacks are added to it):
     near_seconds = 3     a chest stops glowing this long after you reach or open it (0-60)
     exact_match = 0      the Exact match checkbox, saved when you switch it in the search
                          box; exact_key = Ctrl+E, Pad:Y switches it
+    through_walls = glow how lit chests, NPCs and stations show through walls: glow (a
+                         glowing 3D copy), icon (a marker over each, lighter on the
+                         graphics card) or silhouette (an outline on the HUD)
 Restart the game after changing them.
 
 
@@ -124,6 +127,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.16
+- New setting through_walls in find.ini: how lit chests, NPCs and stations show through
+  walls. glow (the default) is the glowing 3D copy, icon a marker over each, lighter on
+  the graphics card, silhouette an outline on the HUD. Try icon if your frame rate drops
+  while things glow (added for HadToRegister's report).
+
 1.2.15
 - Search by effect: what a food or potion gives is searchable, so "oxygen" finds the foods
   with Maximum Oxygen (listed as "Effect: Maximum Oxygen"), and "stamina" or "mana" list
