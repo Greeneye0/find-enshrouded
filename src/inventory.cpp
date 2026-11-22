@@ -27,6 +27,7 @@
 #include <vector>
 #include "inventory.h"
 #include "log.h"
+#include "reflect.h"
 #include "scan.h"
 
 namespace inv {
@@ -65,11 +66,21 @@ bool g_positionFound = false;
 constexpr size_t kHotbarPageA = 0xa0;
 constexpr size_t kHotbarPageB = 0xa4;
 
-constexpr size_t kItemCategory = 0xcc;
-constexpr size_t kItemWeaponType = 0xd0;
-constexpr size_t kItemAmmoType = 0xcd;
-constexpr size_t kItemMaxStack = 0x14;
-constexpr size_t kItemDebugName = 0x820;
+size_t kItemCategory = 0xcc;
+size_t kItemWeaponType = 0xd0;
+size_t kItemAmmoType = 0xcd;
+size_t kItemMaxStack = 0x14;
+size_t kItemDebugName = 0x820;
+// Field offsets from the game's own type reflection (reflect.h); the literals are the build of 2026-11-04.
+void ReadLayoutInner()
+{
+    kItemCategory = reflect::Offset("keen::ItemInfo", "category", 0xcc);
+    kItemWeaponType = reflect::Offset("keen::ItemInfo", "weaponCategoryReference", 0xd0);
+    kItemAmmoType = reflect::Offset("keen::ItemInfo", "ammunitionType", 0xcd);
+    kItemMaxStack = reflect::Offset("keen::ItemInfo", "maxStackSize", 0x14);
+    kItemDebugName = reflect::Offset("keen::ItemInfo", "debugName", 0x820);
+}
+
 constexpr uint8_t kCategoryWeapons = 2;
 
 constexpr int kMaxRegistries = 16;
@@ -394,6 +405,8 @@ void DumpEntity(void* registry, uint32_t entity, const char* label, int bytes)
 }
 
 } // namespace
+
+void ReadLayout() { ReadLayoutInner(); }
 
 
 bool Init()

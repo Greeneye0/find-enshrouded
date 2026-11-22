@@ -201,7 +201,7 @@ bool Eye(void* renderer, double eye[3], double forward[3]) {
     uint8_t* client = g_client.load(std::memory_order_relaxed);
     float view[16];
     if (client) {
-        memcpy(view, client + 0x1d20, sizeof(view));
+        memcpy(view, client + ui::ClientViewOffset(), sizeof(view));
         if (detail::EyeFromView(view, eye, forward)) { InterlockedIncrement(&g_viewEyes); return true; }
     }
     auto camera = Read<uint8_t*>(renderer, 0x40);

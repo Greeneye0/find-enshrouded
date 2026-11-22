@@ -1,0 +1,5 @@
+Skill search works however you open the Skills page: with H, or from the Skills tab of the Character, Backpack, Journal, World or any other menu page.
+Game updates: Find now reads where the game keeps item, recipe and menu data from the game itself when it starts, so an update that moves them no longer breaks Find.
+Recipes that make more than one item had their extra items read wrongly.
+Reported bugs fixed:
+Shift+F did nothing on the Skills page opened from the menu's tabs (reported by Naft).

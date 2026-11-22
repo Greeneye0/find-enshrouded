@@ -45,6 +45,8 @@ struct ItemDesc {
 // Hooks ViewInit (to learn the client's ECS registry) and the item lookup (to learn the item
 // database). Call before the game's code runs.
 bool Init();
+// Item field offsets from the game's type reflection (call once, after reflect::Init).
+void ReadLayout();
 
 // True once the client's registry and the InventorySetup type are known. Picks the registry
 // that knows the local player and one of the probes (the base's chests), else the one holding

@@ -1,4 +1,5 @@
 #include "skills.h"
+#include "hotapi.h"
 // Find on the Skills page (build of 2026-11-04, from the exe's reflection tables and the skill
 // tree screen FUN_140cba6f0, "skillTreeInternalRoot"):
 //
@@ -25,6 +26,7 @@
 #include <map>
 #include <type_traits>
 #include "log.h"
+#include "reflect.h"
 #include "scan.h"
 #include "ui.h"
 
@@ -32,6 +34,13 @@ namespace skills {
 namespace {
 
 int g_screens[2] = {10, 11}; // SkillTree, SkillTreeRespec
+// The tabbed menu (InGameMenu, opened with I, M, J...): its Skills tab draws the same skill tree while the screen stays
+// InGameMenu. Its tab is a byte in the UI system (*(G + 0xd0) + 0x31e88 in the build of 2026-11-04; tab 6 is the skill
+// tree), read where the menu frame (GameUi_Frame 140be87d0) picks the tab: lea rax,[r15 + tab]; ... cmp eax, 6.
+int g_menuScreen = 4;
+int g_backpackScreen = 9; // Backpack (B, I): the same tabs, Skills among them
+int32_t g_menuTab = 0;
+constexpr uint8_t kSkillsTab = 6;
 
 // keen::HudScreenType's reflection entries are 0x28 bytes: {const char* name, u64 length, u64 value, ...}, in order;
 // SkillTree is followed by SkillTreeRespec. Both are looked up by name in the exe's .rdata.
@@ -45,7 +54,7 @@ void ReadScreenNumbers()
         return length == n && text >= lo && text + n <= hi && memcmp(reinterpret_cast<const void*>(text), want, n) == 0;
     };
     auto sec = IMAGE_FIRST_SECTION(nt);
-    int found = 0;
+    int found = 0, menus = 0, menu = -1, backpacks = 0, backpack = -1;
     uint64_t values[2] = {};
     for (unsigned s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++sec) {
         if (memcmp(sec->Name, ".rdata", 6) != 0)
@@ -54,6 +63,14 @@ void ReadScreenNumbers()
         for (size_t off = 0; off + 0x50 <= sec->Misc.VirtualSize; off += 8) {
             uint64_t e[8];
             memcpy(e, p + off, sizeof(e));
+            if (e[1] == 8 && e[6] == 9 && named(e[0], 8, "Backpack") && named(e[5], 9, "SkillTree") && e[2] < 256) {
+                backpack = static_cast<int>(e[2]);
+                ++backpacks;
+            }
+            if (e[1] == 10 && e[6] == 3 && named(e[0], 10, "InGameMenu") && named(e[5], 3, "Map") && e[2] < 256) {
+                menu = static_cast<int>(e[2]);
+                ++menus;
+            }
             if (e[1] != 9 || e[6] != 15 || !named(e[0], 9, "SkillTree") || !named(e[5], 15, "SkillTreeRespec"))
                 continue;
             values[0] = e[2];
@@ -68,6 +85,46 @@ void ReadScreenNumbers()
     } else {
         Log("skills: screen numbers not found in the game (%d matches), using %d and %d", found, g_screens[0], g_screens[1]);
     }
+    if (menus == 1)
+        g_menuScreen = menu;
+    if (backpacks == 1)
+        g_backpackScreen = backpack;
+    if (uint8_t* at = FindUnique("48 C7 85 ?? ?? ?? ?? 04 00 00 00 49 8D 87 ?? ?? ?? ?? B9 ?? ?? ?? ?? 48 0F 45 C8 0F B6 01 83 F8 06 0F 87")) {
+        int32_t tab = 0;
+        memcpy(&tab, at + 14, sizeof(tab));
+        if (tab > 0 && tab < 0x100000)
+            g_menuTab = tab;
+    }
+    Log("skills: the menu's Skills tab %s (menu screens %d and %d, tab at +0x%x)", g_menuTab ? "found" : "not found", g_menuScreen,
+        g_backpackScreen, g_menuTab);
+}
+
+// Every way to the skill tree ends in its page function 140cba6f0(respec, ...): the Skills page (H), the Skills tab
+// of every tabbed screen (Character, Backpack, Journal... each keeps its own screen number) and Reskill. Find hooks it
+// and counts the Skills page as open while it drew in the last 200 ms.
+using TreePageFn = uint64_t (*)(uint64_t, uint64_t);
+TreePageFn g_originalTreePage = nullptr;
+volatile LONG64 g_treeDrawnAt = 0;
+uint64_t TreePageHook(uint64_t a, uint64_t b)
+{
+    hot::Lease lease;
+    if (lease)
+        InterlockedExchange64(&g_treeDrawnAt, static_cast<LONG64>(GetTickCount64()));
+    return g_originalTreePage(a, b);
+}
+bool TreeDrawnRecently()
+{
+    return g_originalTreePage && GetTickCount64() - static_cast<ULONGLONG>(InterlockedCompareExchange64(&g_treeDrawnAt, 0, 0)) < 200;
+}
+
+// The Skills tab of the tabbed menu or of the backpack is showing (the fallback without the hook).
+bool MenuSkillsTab(int screen)
+{
+    if ((screen != g_menuScreen && screen != g_backpackScreen) || !g_menuTab)
+        return false;
+    auto* g = static_cast<uint8_t*>(ui::G());
+    uint8_t* system = g ? *reinterpret_cast<uint8_t**>(g + 0xd0) : nullptr;
+    return system && system[g_menuTab] == kSkillsTab;
 }
 
 using UiCtxFn = void* (*)();
@@ -118,18 +175,18 @@ constexpr size_t kCanvasSizeXY = 0x1e8, kCanvasMiddle = 0x1f0, kCanvasScaledShow
 constexpr size_t kWidgetRect = 0x114;
 constexpr size_t kUiTime = 0x10;           // G: +0x10 -> +0x08 UI time (ns)
 // Assets (keen::FbUiBundle): menu (0xea10) + skilltree (0x20) = keen::FbUiSkillTree.
-constexpr size_t kSkillTree = 0xea10 + 0x20;
-constexpr size_t kNodeHighlight = kSkillTree + 0x18;           // UiTexture nodeHighlight
+size_t kSkillTree = 0xea10 + 0x20;
+size_t kNodeHighlight = kSkillTree + 0x18;           // UiTexture nodeHighlight
 // nodes (keen::FbUiSkillNodes): each type's FbUiSkillNode, whose nominalWidth comes first, by
 // keen::SkillNodeType (record + 0x04): Root, Attribute, ActiveSkill, PassiveSkill.
-constexpr size_t kNodeWidths[4] = {kSkillTree + 0xa8 + 0x08, kSkillTree + 0xa8 + 0x6c, kSkillTree + 0xa8 + 0x134,
+size_t kNodeWidths[4] = {kSkillTree + 0xa8 + 0x08, kSkillTree + 0xa8 + 0x6c, kSkillTree + 0xa8 + 0x134,
                                    kSkillTree + 0xa8 + 0xd0};
 constexpr size_t kRecordType = 0x04;
 // keen::FbUiSkillTree + 0x78 classHints: BlobArray<UiSkillTreeClassHint> (0x24 each: +0x00 label
 // UiLocaTagReference, +0x10 isPrimary, +0x14 colour, +0x1c directionDegrees, +0x20 distanceFromRing).
-constexpr size_t kClassHints = 0x78, kHintSize = 0x24, kHintDegrees = 0x1c;
+size_t kClassHints = 0x78, kHintSize = 0x24, kHintDegrees = 0x1c;
 constexpr float kBarBottom = 100.0f; // the menu bar over the tree (UI units): no pulse under it
-constexpr size_t kRingGlow = 0xd3d0 + 0x30;                    // primitives: ringSoftGlow
+size_t kRingGlow = 0xd3d0 + 0x30;                    // primitives: ringSoftGlow
 constexpr uint32_t kGold = 0xFF3CC8FF;                         // 0xAABBGGRR, as the chest pulse
 
 struct Widget {
@@ -174,6 +231,22 @@ struct LayerScope {
         g_endLayer(layer);
     }
 };
+
+// UI bundle offsets from the game's type reflection (reflect.h); the literals are the build of 2026-11-04.
+void ReadAssetLayout()
+{
+    kSkillTree = reflect::Offset("keen::FbUiBundle", "menu.skilltree", 0xea10 + 0x20);
+    kRingGlow = reflect::Offset("keen::FbUiBundle", "primitives.ringSoftGlow", 0xd3d0 + 0x30);
+    const char* T = "keen::FbUiSkillTree";
+    kNodeHighlight = kSkillTree + reflect::Offset(T, "nodeHighlight", 0x18);
+    kNodeWidths[0] = kSkillTree + reflect::Offset(T, "nodes.root", 0xa8 + 0x08);
+    kNodeWidths[1] = kSkillTree + reflect::Offset(T, "nodes.simpleAttribute", 0xa8 + 0x6c);
+    kNodeWidths[2] = kSkillTree + reflect::Offset(T, "nodes.activeSkill", 0xa8 + 0x134);
+    kNodeWidths[3] = kSkillTree + reflect::Offset(T, "nodes.passiveSkill", 0xa8 + 0xd0);
+    kClassHints = reflect::Offset(T, "classHints", 0x78);
+    kHintSize = reflect::Size("keen::UiSkillTreeClassHint", 0x24);
+    kHintDegrees = reflect::Offset("keen::UiSkillTreeClassHint", "directionDegrees", 0x1c);
+}
 
 uint8_t* g_system = nullptr;
 
@@ -591,14 +664,28 @@ bool IsReskillScreen(int screen)
     return screen >= 0 && screen == g_screens[1];
 }
 
+bool NoOwnHintBar(int screen)
+{
+    return IsReskillScreen(screen); // the menu's Skills tab draws its bar (Zoom, Close) once Find counts it as the Skills page
+}
+
 bool IsScreen(int screen)
 {
-    return screen >= 0 && (screen == g_screens[0] || screen == g_screens[1]);
+    if (screen < 0)
+        return false;
+    if (screen == g_screens[0] || screen == g_screens[1])
+        return true;
+    return g_originalTreePage ? TreeDrawnRecently() : MenuSkillsTab(screen);
 }
 
 bool Init()
 {
     ReadScreenNumbers();
+    ReadAssetLayout();
+    if (uint8_t* page = FindUnique("48 8B C4 89 50 10 89 48 08 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 28 FF FF FF"))
+        g_originalTreePage = reinterpret_cast<TreePageFn>(InstallHookChained(page, reinterpret_cast<void*>(&TreePageHook), 14));
+    Log("skills: %s", g_originalTreePage ? "the skill tree's page is watched (every way to it counts as the Skills page)"
+                                         : "the skill tree's page function not found: Skills tabs inside other screens are read from the menu's tab");
     auto find = [](auto& out, const char* name, const char* pattern) {
         out = reinterpret_cast<std::remove_reference_t<decltype(out)>>(FindUnique(pattern));
         if (!out)

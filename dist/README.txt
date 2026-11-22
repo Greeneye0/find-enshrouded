@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.17
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.18
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -57,7 +57,8 @@ THE SKILL TREE
 On the Skills page, Shift+F (LB+X on a controller) searches the skill tree instead of your
 chests. Type part of a skill's name or of what it does, in the game's language; categories
 such as Guardian are listed too. The skills found pulse gold for 5 seconds, and a single
-match brings the view to it. Esc closes only the search. The same works on the Reskill page.
+match brings the view to it. Esc closes only the search. It works however you open the Skills page (H, or the Skills
+tab of any menu page), and on the Reskill page.
 
 
 WHAT YOU CAN SEARCH FOR
@@ -127,6 +128,15 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.18
+- Skill search works however you open the Skills page: with H, or from the Skills tab of
+  the Character, Backpack, Journal, World or any other menu page.
+- Game updates: Find now reads where the game keeps item, recipe and menu data from the
+  game itself when it starts, so an update that moves them no longer breaks Find.
+- Recipes that make more than one item had their extra items read wrongly.
+Reported bugs fixed:
+- Shift+F did nothing on the Skills page opened from the menu's tabs (reported by Naft).
+
 1.2.17
 - Skill search works on the Reskill page too (the skill tree you get when resetting
   skills): Shift+F opens it, found skills pulse gold, and its hint bar shows the Find key.

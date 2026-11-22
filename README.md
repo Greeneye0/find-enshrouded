@@ -46,7 +46,8 @@ servers and other players need nothing. Find only reads your chests; it never mo
 On the Skills page, **Shift+F** (LB+X on a controller) searches the skill tree instead of your
 chests. Type part of a skill's name or of what it does, in the game's language; categories such
 as `Guardian` are listed too. The skills found pulse gold for 5 seconds, and a single match
-brings the view to it. Esc closes only the search. The same works on the Reskill page.
+brings the view to it. Esc closes only the search. It works however you open the Skills page (H, or the Skills tab of any menu page),
+and on the Reskill page.
 
 ## Settings
 

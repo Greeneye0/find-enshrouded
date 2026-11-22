@@ -28,6 +28,8 @@ std::string LocaId(uint32_t id);
 
 bool Init();
 
+void ReadAssetLayout(); // UI bundle offsets from the game's type reflection (after reflect::Init)
+size_t ClientViewOffset(); // the client's view matrix; its projection follows at +0x40
 void* G();      // the UI root (DAT_14281b498)
 void* Client(); // *(**(G + 0xd0) + 0x38), or null outside a world
 // Find's marker (the game's five-point star) centred at (cx, cy) in full-screen UI units, size x size, on a layer of its own

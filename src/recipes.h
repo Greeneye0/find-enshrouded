@@ -6,6 +6,9 @@
 // registry: read once from the loaded game data, then kept for the session.
 namespace recipes {
 
+// Recipe field offsets from the game's type reflection (call once, after reflect::Init).
+void ReadLayout();
+
 // Finds the recipe registry in the game data that holds anyGameData (an ItemInfo record will do).
 // Returns false if it isn't there; Load can be called again later.
 bool Load(const void* anyGameData);

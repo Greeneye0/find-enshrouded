@@ -8,7 +8,7 @@
 // texts are 16-byte keys hashed with fnv1a32). *(**(G + 0xd0) + 0x38): the client.
 //
 // World markers copy 140c32210, the HUD's waypoint marker (inside "SpatialElementsWindow"):
-//   140a43f80 Project(G, &out{x, y, ..}, client + 0x1d20 view, client + 0x1d60 projection,
+//   140a43f80 Project(G, &out{x, y, ..}, client + ClientViewOffset() view, client + ClientViewOffset() + 0x40 projection,
 //             &worldPos, &clamp{4 floats, u8 enabled at +0x10}) -> in front of the camera
 //   a child widget (140a2e6c0 Begin, handle at +8) placed at the point, holding a 32x32 child
 //   centred on it that draws three images: fill (assets + 0xbae8, colour assets + 0xe448),
@@ -49,6 +49,7 @@
 #include "log.h"
 #include "scan.h"
 #include "ui.h"
+#include "reflect.h"
 #include "projection_frame.h"
 
 namespace ui {
@@ -93,19 +94,25 @@ EndWidgetFn g_originalEnd = nullptr;
 BeginLabelFn g_beginLabel = nullptr;
 EndLabelFn g_endLabel = nullptr;
 void* g_afterButtons = nullptr; // return address of the dialog's "end the button row" call
-constexpr size_t kAssetSmallText = 0x10bbc;
+size_t kAssetSmallText = 0x10bbc;
+size_t kAssetBoxInnerGlow = 0xd3d0 + 0x120;
+size_t kAssetGlowBoxSmall = 0xd3d0 + 0x140;
+size_t kAssetBoxTicked = 0xba18 + 0x20;
+size_t kAssetBoxEmpty = 0xba18 + 0x30;
+size_t kAssetRoundedBox = 0xd3d0 + 0x180;
+size_t kAssetStorageIcon = 0xbbc8;
 constexpr uint32_t kHintColour = 0xffc8c8c8;
 constexpr float kHintAlpha = 0.6f;
 
-constexpr size_t kAssetMarkerFill = 0xbae8;
-constexpr size_t kAssetMarkerOutline = 0xbaf8;
-constexpr size_t kAssetMarkerIcon = 0xbb08;
-constexpr size_t kAssetMarkerFillColour = 0xe448;
+size_t kAssetMarkerFill = 0xbae8;
+size_t kAssetMarkerOutline = 0xbaf8;
+size_t kAssetMarkerIcon = 0xbb08;
+size_t kAssetMarkerFillColour = 0xe448;
 constexpr size_t kLocaCancel = 0x2110;
 // FbUiPrimitives (assets + 0xd3d0): circle +0x00, circleOutline +0x10, circleSoftGlow +0x20,
 // ringSoftGlow +0x30, triangle +0x50 (the menu arrow, 0xd2a0), gradients +0xa0.
-constexpr size_t kAssetSoftGlow = 0xd3d0 + 0x20;
-constexpr size_t kAssetRingGlow = 0xd3d0 + 0x30;
+size_t kAssetSoftGlow = 0xd3d0 + 0x20;
+size_t kAssetRingGlow = 0xd3d0 + 0x30;
 
 uint8_t* Assets()
 {
@@ -314,8 +321,6 @@ bool g_slotLit = false;             // ...and its highlight is drawn
 int g_slotCalls = 0, g_slotWanted = 0, g_slotDraws = 0; // diagnostics while lighting is on
 uint32_t g_slotSeen[8] = {};
 std::vector<uint32_t> g_slotIds; // diagnostics: distinct item ids the slots showed
-constexpr size_t kAssetBoxInnerGlow = 0xd3d0 + 0x120;
-constexpr size_t kAssetGlowBoxSmall = 0xd3d0 + 0x140;
 ImageFn g_originalImage = nullptr;
 DrawRealFn g_originalDrawReal = nullptr;
 std::vector<std::array<uint8_t, 16>> g_iconRefs; // the wanted items' icon references
@@ -754,6 +759,31 @@ void* G()
     return g_root ? *g_root : nullptr;
 }
 
+// The client's view matrix (+0x1d20 in the build of 2026-11-04), its projection 0x40 after it.
+size_t ClientViewOffset()
+{
+    static const size_t offset = reflect::FromCode("ClientView", "11 87 ?? ?? ?? ?? 81 F9 D0 02 00 00", 2, "8B 86 ?? ?? ?? ?? 4C 8B B5 ?? ?? ?? ??", 2, 0x1d20);
+    return offset;
+}
+
+// UI bundle offsets from the game's type reflection (reflect.h); the literals are the build of 2026-11-04.
+void ReadAssetLayout()
+{
+    kAssetSmallText = reflect::Offset("keen::FbUiBundle", "namedStyles.defaultStyle", 0x10bbc);
+    kAssetMarkerFill = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.hudMarkerFill", 0xbae8);
+    kAssetMarkerOutline = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.hudMarkerOutline", 0xbaf8);
+    kAssetMarkerIcon = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.hudMarkerQuestionMark", 0xbb08);
+    kAssetMarkerFillColour = reflect::Offset("keen::FbUiBundle", "hud.spatial.attentionMarkerQuestionFill", 0xe448);
+    kAssetSoftGlow = reflect::Offset("keen::FbUiBundle", "primitives.circleSoftGlow", 0xd3d0 + 0x20);
+    kAssetRingGlow = reflect::Offset("keen::FbUiBundle", "primitives.ringSoftGlow", 0xd3d0 + 0x30);
+    kAssetBoxInnerGlow = reflect::Offset("keen::FbUiBundle", "primitives.boxInnerGlow", 0xd3d0 + 0x120);
+    kAssetGlowBoxSmall = reflect::Offset("keen::FbUiBundle", "primitives.glowBoxSmall", 0xd3d0 + 0x140);
+    kAssetBoxTicked = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.fulfilled", 0xba18 + 0x20);
+    kAssetBoxEmpty = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.unfulfilled", 0xba18 + 0x30);
+    kAssetRoundedBox = reflect::Offset("keen::FbUiBundle", "primitives.roundedBoxSmall", 0xd3d0 + 0x180);
+    kAssetStorageIcon = reflect::Offset("keen::FbUiBundle", "icons.genericIcons.star5", 0xbbc8);
+}
+
 void* Client()
 {
     auto* g = static_cast<uint8_t*>(G());
@@ -769,8 +799,8 @@ bool CaptureProjection(ProjectionFrame& frame) {
     auto* root=static_cast<uint8_t*>(G());auto* client=static_cast<uint8_t*>(Client());
     if(!root||!client)return false;
     auto* window=*reinterpret_cast<uint8_t**>(root+0x10);if(!window)return false;
-    memcpy(frame.view,client+0x1d20,sizeof(frame.view));
-    memcpy(frame.projection,client+0x1d60,sizeof(frame.projection));
+    memcpy(frame.view,client+ClientViewOffset(),sizeof(frame.view));
+    memcpy(frame.projection,client+ClientViewOffset()+0x40,sizeof(frame.projection));
     memcpy(frame.viewport,window+0x18,sizeof(frame.viewport));
     return frame.viewport[2]>=1 && frame.viewport[3]>=1;
 }
@@ -782,13 +812,13 @@ bool Project(const float world[3], float& x, float& y, float* depth)
         return false;
     alignas(16) float out[8] = {};
     alignas(16) uint8_t clamp[0x20] = {}; // no clamping to the screen edge
-    if (!g_project(G(), out, client + 0x1d20, client + 0x1d60, world, clamp))
+    if (!g_project(G(), out, client + ClientViewOffset(), client + ClientViewOffset() + 0x40, world, clamp))
         return false;
     x = out[0];
     y = out[1];
     // Same view-space Z used by the native Project function (before divide).
     if(depth) {
-        const float* view=reinterpret_cast<const float*>(client+0x1d20);
+        const float* view=reinterpret_cast<const float*>(client+ClientViewOffset());
         *depth=world[0]*view[2]+world[1]*view[6]+world[2]*view[10]+view[14];
     }
     return x != 0.0f || y != 0.0f;
@@ -985,8 +1015,6 @@ bool DrawLabelAt(float x, float y, const char* utf8, const char* name)
 // The game's generic icons (FbUiIcons + 0x00): fulfilled is a ticked box, unfulfilled an empty one.
 constexpr float kCheckLabelDy = 0.0f;  // the label's top from the box's
 constexpr float kCheckBoxDy = -2.0f;  // the box's top from the tips' y
-constexpr size_t kAssetBoxTicked = 0xba18 + 0x20;
-constexpr size_t kAssetBoxEmpty = 0xba18 + 0x30;
 
 // The tips sit in the room a blank hint line keeps, side by side and centred, then the checkbox. Widths
 // are close to what the game draws: the icon, its gap, and the label's letters.
@@ -1313,7 +1341,6 @@ namespace {
 // A scroll bar right of the list when it holds more than it shows: a dim track and a gold thumb
 // (FbUiPrimitives roundedBoxSmall), drawn with the button row's widget (images take absolute
 // rects and are not clipped to their widget).
-constexpr size_t kAssetRoundedBox = 0xd3d0 + 0x180;
 // Bars behind the selected line (gold) and the line under the mouse (faint), over the width
 // of the lines (the area between field and buttons, split evenly between the shown lines).
 // Nine-slice boxes take their transparency from the colour's alpha byte (0xAABBGGRR); the float
@@ -1498,7 +1525,6 @@ bool DrawMesh(const smooth_highlight::Batch& batch) {
 namespace ui {
 // FbUiBundle icons.genericIcons.star5: the five-point star that marks found chests (reflected types, build 2026-11-04;
 // chosen 2026-11-17 from the game's icons; the map mod pins Find's chests with the same one).
-constexpr size_t kAssetStorageIcon = 0xbbc8;
 
 bool DrawStorageIcon(float cx, float cy, float size, uint32_t rgba, float alpha)
 {

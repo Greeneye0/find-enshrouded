@@ -16,18 +16,34 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "log.h"
+#include "reflect.h"
 
 namespace recipes {
 namespace {
 
-constexpr size_t kRecipeSize = 0xa8;
-constexpr size_t kRecipeId = 0x10;
-constexpr size_t kWorkshop = 0x24;
-constexpr size_t kInputs = 0x28;
-constexpr size_t kOutputs = 0x30;
-constexpr size_t kDebugName = 0x78;
-constexpr size_t kStackSize = 0x30;
-constexpr size_t kStackItem = 0x10;
+size_t kRecipeSize = 0xa8;
+size_t kRecipeId = 0x10;
+size_t kWorkshop = 0x24;
+size_t kInputs = 0x28;
+size_t kOutputs = 0x30;
+size_t kDebugName = 0x78;
+size_t kStackSize = 0x30;
+size_t kStackItem = 0x10;
+size_t kOutputSize = 0x30; // outputs were read at the inputs' stride
+
+// Field offsets from the game's own type reflection (reflect.h); the literals are the build of 2026-11-04.
+void ReadLayoutInner()
+{
+    kRecipeSize = reflect::Size("keen::RecipeInfo", 0xa8);
+    kRecipeId = reflect::Offset("keen::RecipeInfo", "recipeId", 0x10);
+    kWorkshop = reflect::Offset("keen::RecipeInfo", "workshopId", 0x24);
+    kInputs = reflect::Offset("keen::RecipeInfo", "input", 0x28);
+    kOutputs = reflect::Offset("keen::RecipeInfo", "output", 0x30);
+    kDebugName = reflect::Offset("keen::RecipeInfo", "debugName", 0x78);
+    kStackSize = reflect::Size("keen::RecipeInputResource", 0x30);
+    kStackItem = reflect::Offset("keen::RecipeItemStackResource", "item", 0x10);
+    kOutputSize = reflect::Size("keen::RecipeItemStackResource", 0x18);
+}
 
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_madeBy; // item -> workshops
 std::unordered_map<uint32_t, std::vector<uint32_t>> g_makes;  // workshop -> items
@@ -59,7 +75,7 @@ bool LooksLikeRecipe(const Span& s, const uint8_t* r)
     uint32_t inputs, outputs, nameLen;
     if (!Array(s, r + kInputs, kStackSize, inputs) || inputs > 32)
         return false;
-    const uint8_t* out = Array(s, r + kOutputs, kStackSize, outputs); // none: a flame altar upgrade
+    const uint8_t* out = Array(s, r + kOutputs, kOutputSize, outputs); // none: a flame altar upgrade
     if (!out || outputs > 8)
         return false;
     const uint8_t* name = Array(s, r + kDebugName, 1, nameLen);
@@ -91,19 +107,19 @@ int TakeRegistry(const Span& s, const uint8_t* header)
         g_allRecipeIds.insert(*reinterpret_cast<const uint32_t*>(r + kRecipeId));
         {
             uint32_t n;
-            const uint8_t* out = Array(s, r + kOutputs, kStackSize, n);
+            const uint8_t* out = Array(s, r + kOutputs, kOutputSize, n);
             for (uint32_t o = 0; out && o < n; ++o) {
-                g_allOutputs.push_back(*reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem));
-                g_byOutput[*reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem)].push_back(r);
+                g_allOutputs.push_back(*reinterpret_cast<const uint32_t*>(out + o * kOutputSize + kStackItem));
+                g_byOutput[*reinterpret_cast<const uint32_t*>(out + o * kOutputSize + kStackItem)].push_back(r);
             }
         }
         if (!workshop)
             continue;
         uint32_t recipeId = *reinterpret_cast<const uint32_t*>(r + kRecipeId);
         uint32_t outputs;
-        const uint8_t* out = Array(s, r + kOutputs, kStackSize, outputs);
+        const uint8_t* out = Array(s, r + kOutputs, kOutputSize, outputs);
         for (uint32_t o = 0; o < outputs; ++o) {
-            uint32_t item = *reinterpret_cast<const uint32_t*>(out + o * kStackSize + kStackItem);
+            uint32_t item = *reinterpret_cast<const uint32_t*>(out + o * kOutputSize + kStackItem);
             auto& by = g_madeBy[item];
             if (std::find(by.begin(), by.end(), workshop) == by.end())
                 by.push_back(workshop);
@@ -142,6 +158,8 @@ int ScanRegion(const Span& s)
 }
 
 } // namespace
+
+void ReadLayout() { ReadLayoutInner(); }
 
 bool Load(const void* anyGameData)
 {

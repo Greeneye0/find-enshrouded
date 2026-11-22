@@ -45,6 +45,7 @@
 #include "find.h"
 #include "inventory.h"
 #include "log.h"
+#include "reflect.h"
 #include "match.h"
 #include "nativehighlight.h"
 #include "scan.h"
@@ -68,43 +69,43 @@ UiDispatchFn g_dispatch = nullptr;
 DualInventoryFn g_originalDual = nullptr;
 void* volatile g_app = nullptr;
 
-constexpr size_t kClientWorld = 0x47d4e0;
-constexpr size_t kClientPlayer = 0x466b44;
-constexpr size_t kWorldPlayerPos = 0x2c18;
-constexpr size_t kWorldPermissions = 0x2c68;
-constexpr size_t kWorldBases = 0x3ec8;
+size_t kClientWorld = 0x47d4e0;
+size_t kClientPlayer = 0x466b44;
+size_t kWorldPlayerPos = 0x2c18;
+size_t kWorldPermissions = 0x2c68;
+size_t kWorldBases = 0x3ec8;
 constexpr size_t kRegPermissions = 0x10;
 constexpr size_t kRegBaseCount = 0x24;
 constexpr size_t kRegBases = 0x30;
 constexpr size_t kBaseStride = 0x130;
 constexpr size_t kBaseMin = 0xF0;
 constexpr size_t kBaseMax = 0x100;
-constexpr size_t kItemName = 0x48;
+size_t kItemName = 0x48;
 constexpr float kFixedToMeters = 1.0f / 4294967296.0f;
 constexpr int kMaxChests = 4096; // 256 stopped short in big bases: a depot server had more containers than that
 
 constexpr int kVisibleSuggestions = 7; // the dialog shows up to 8 lines
 constexpr int kMaxSuggestions = 60;     // the list scrolls through this many
 constexpr int kMaxSkillSuggestions = 512; // the Skills page: all of them, to pick with a controller
-constexpr size_t kItemRarity = 0x17;    // ItemInfo: ItemRarity (1 uncommon .. 4 legendary)
-constexpr size_t kItemCaption = 0x58;   // ItemInfo: CaptionLocaTag, the type line ("One-Handed Axe")
-constexpr size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
+size_t kItemRarity = 0x17;    // ItemInfo: ItemRarity (1 uncommon .. 4 legendary)
+size_t kItemCaption = 0x58;   // ItemInfo: CaptionLocaTag, the type line ("One-Handed Axe")
+size_t kItemCategory = 0xcc;  // ItemInfo: ItemCategory
 constexpr uint8_t kCategoryBlueprints = 10;
-constexpr size_t kItemPerkIds = 0x658;  // ItemInfo: PerkId[5], the perks its upgrades unlock
-constexpr size_t kItemUiValues = 0x5e8;     // ItemInfo: BlobArray<ImpactUiValue> uiValues (0x28 each, +0 LocaTagId)
-constexpr size_t kItemUiBuffValues = 0x5f0; // ItemInfo: ... uiBuffValues (what a food or potion gives: "Maximum Oxygen")
-constexpr size_t kItemLevelRange = 0x674; // ItemInfo: itemLevelRange {minLevel, maxLevel} (uint32)
-constexpr size_t kUiClientPerks = 0x466800; // UI client: the perk registry (as the item tooltip uses it)
+size_t kItemPerkIds = 0x658;  // ItemInfo: PerkId[5], the perks its upgrades unlock
+size_t kItemUiValues = 0x5e8;     // ItemInfo: BlobArray<ImpactUiValue> uiValues (0x28 each, +0 LocaTagId)
+size_t kItemUiBuffValues = 0x5f0; // ItemInfo: ... uiBuffValues (what a food or potion gives: "Maximum Oxygen")
+size_t kItemLevelRange = 0x674; // ItemInfo: itemLevelRange {minLevel, maxLevel} (uint32)
+size_t kUiClientPerks = 0x466800; // UI client: the perk registry (as the item tooltip uses it)
 // A glow lasts until the next search, at most glow_seconds (find.ini), or until you come within
 // near_meters (3D) and then near_seconds more.
 constexpr float kLeftMeters = 120.0f;                // farther than this: you left the base, the glow ends
 constexpr ULONGLONG kMinGlowMs = 2000;               // chests right next to you still show for a moment
 constexpr ULONGLONG kFadeOutMs = 600;
 constexpr float kChestCentre = 0.5f; // chest origin is at its bottom; chests stack 1 m apart
-constexpr size_t kItemPlacedEntity = 0x104 + 0x2bc; // ItemInfo: equipment.placedEntity, a TemplateReference (GUID first)
-constexpr size_t kItemIcon = 0x56c;   // ItemInfo: iconImage, a 16-byte UiImageReference
+size_t kItemPlacedEntity = 0x104 + 0x2bc; // ItemInfo: equipment.placedEntity, a TemplateReference (GUID first)
+size_t kItemIcon = 0x56c;   // ItemInfo: iconImage, a 16-byte UiImageReference
 constexpr uint8_t kCmdOpenScreen = 0x01;
-constexpr size_t kUiScreen = 0x1cd8;  // UI client: the HUD screen shown
+size_t kUiScreen = 0x1cd8;  // UI client: the HUD screen shown
 constexpr uint8_t kScreenPlaying = 1;
 constexpr uint8_t kScreenInventory = 9;
 // HudScreenType Collection: with nothing to collect it draws nothing and gives the UI the mouse,
@@ -115,6 +116,36 @@ constexpr uint8_t kScreenSystemMenu = 2;
 constexpr uint8_t kScreenCrafting = 25; // a station's or an NPC's crafting window (the Kitchen)
 constexpr size_t kWindowMouseScale = 0x68; // game window object: raw mouse -> camera factor
 constexpr size_t kDispatchCmdSize = 0x410;
+// Field offsets from the game's own type reflection and code (reflect.h); the literals are the build of 2026-11-04.
+// The code signatures come from tools/patchcheck/dispsig.py, checked to read the right value on the builds of
+// 2026-10-21 (World fields 0x10 lower) and 2026-11-02 too.
+size_t kUiValueSize = 0x28, kUiValueLoca = 0, kUiValueValue = 8; // ImpactUiValue: its size, locaId, value
+
+void ReadItemLayout()
+{
+    kClientWorld = reflect::FromCode("ClientWorld", "8B 8F ?? ?? ?? ?? 33 DB 0F 10 72 04", 2, "83 B9 ?? ?? ?? ?? 00 8B FA 48 8B D9", 2, 0x47d4e0);
+    kClientPlayer = reflect::FromCode("ClientPlayer", "39 BF ?? ?? ?? ?? 75 ?? 4C 39 7C 24 58", 2, "8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 89 43 10", 2, 0x466b44);
+    kUiClientPerks = reflect::FromCode("UiClientPerks", "8B 92 ?? ?? ?? ?? 41 8B 4D 00 E8 ?? ?? ?? ??", 2, "8B 92 ?? ?? ?? ?? 41 8B 0F E8 ?? ?? ?? ?? 48 85 C0", 2, 0x466800);
+    kUiScreen = reflect::FromCode("UiScreen", "80 BB ?? ?? ?? ?? 30 74 ?? 45 32 F6", 2, "80 BF ?? ?? ?? ?? 01 75 ?? 4D 85 C0", 2, 0x1cd8);
+    kWorldPlayerPos = reflect::FromCode("WorldPlayerPos", "11 8F ?? ?? ?? ?? 4D 89 AF ?? ?? ?? ??", 2, "89 BB ?? ?? ?? ?? 48 89 BB ?? ?? ?? ?? 48 89 BB ?? ?? ?? ?? C7 83 ?? ?? ?? ?? 00 00 80 3F", 2, 0x2c18);
+    kWorldPermissions = reflect::FromCode("WorldPermissions", "89 84 33 ?? ?? ?? ?? 49 8B 86 ?? ?? ?? ??", 3, "8D 97 ?? ?? ?? ?? 49 8B 0C 24 E8 ?? ?? ?? ??", 2, 0x2c68);
+    kWorldBases = reflect::FromCode("WorldBases", "89 87 ?? ?? ?? ?? 49 8B 04 24 48 89 44 24 60", 2, "8B 8E ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4E 08", 2, 0x3ec8);
+    ui::ClientViewOffset(); // resolved here, not on first use in a render job
+    kUiValueSize = reflect::Size("keen::ImpactUiValue", 0x28);
+    kUiValueLoca = reflect::Offset("keen::ImpactUiValue", "locaId", 0);
+    kUiValueValue = reflect::Offset("keen::ImpactUiValue", "value", 8);
+    kItemName = reflect::Offset("keen::ItemInfo", "name", 0x48);
+    kItemRarity = reflect::Offset("keen::ItemInfo", "rarity", 0x17);
+    kItemCaption = reflect::Offset("keen::ItemInfo", "caption", 0x58);
+    kItemCategory = reflect::Offset("keen::ItemInfo", "category", 0xcc);
+    kItemPerkIds = reflect::Offset("keen::ItemInfo", "perkIds", 0x658);
+    kItemUiValues = reflect::Offset("keen::ItemInfo", "uiValues", 0x5e8);
+    kItemUiBuffValues = reflect::Offset("keen::ItemInfo", "uiBuffValues", 0x5f0);
+    kItemLevelRange = reflect::Offset("keen::ItemInfo", "itemLevelRange", 0x674);
+    kItemPlacedEntity = reflect::Offset("keen::ItemInfo", "equipment.placedEntity", 0x104 + 0x2bc);
+    kItemIcon = reflect::Offset("keen::ItemInfo", "iconImage", 0x56c);
+}
+
 constexpr float kOpenedChestMeters = 5.0f;   // an opened chest window belongs to the nearest glow this close
 constexpr ULONGLONG kChestWindowGapMs = 400; // a longer gap between chest window frames: opened anew
 constexpr uint32_t kIconColour = 0xFF3CC8FF; // bright gold (0xAABBGGRR)
@@ -656,11 +687,14 @@ std::vector<std::string> ItemEffects(const uint8_t* info, uint8_t category)
     if (!blob[0] || blob[1] <= 0 || blob[1] > 32)
         return effects;
     for (int32_t k = 0; k < blob[1]; ++k) {
-        int32_t v[3] = {};
-        hot::Read(info + kItemUiValues + blob[0] + 0x28 * k, v, sizeof(v));
-        if (!v[0] || v[2] <= 0)
+        const uint8_t* entry = info + kItemUiValues + blob[0] + kUiValueSize * k;
+        uint32_t loca = 0;
+        int32_t value = 0;
+        hot::Read(entry + kUiValueLoca, &loca, sizeof(loca));
+        hot::Read(entry + kUiValueValue, &value, sizeof(value));
+        if (!loca || value <= 0)
             continue;
-        std::string label = Trim(ui::LocaId(static_cast<uint32_t>(v[0])));
+        std::string label = Trim(ui::LocaId(loca));
         if (label.empty() || label.size() >= 48 || (!g_durationWord.empty() && Lower(label).find(g_durationWord) != std::string::npos))
             continue;
         if (std::find(effects.begin(), effects.end(), label) == effects.end())
@@ -1670,7 +1704,7 @@ bool Search(const std::string& text, bool picked = false)
                 line += field == kItemUiValues ? " | ui:" : " | buff:";
                 for (int32_t k = 0; blob[0] && k < blob[1] && k < 12; ++k) {
                     uint32_t v[3] = {};
-                    hot::Read(info + field + blob[0] + 0x28 * k, v, sizeof(v));
+                    hot::Read(info + field + blob[0] + kUiValueSize * k, v, sizeof(v));
                     char extra[32]; snprintf(extra, sizeof(extra), " id %08x fmt %u", v[0], v[1] & 0xff);
                     line += " [" + ui::LocaId(v[0]) + " " + std::to_string(static_cast<int32_t>(v[2])) + extra + "]";
                 }
@@ -2840,8 +2874,8 @@ void HintBarBody(HintSpan* span, void* options)
     int model = -1;
     for (uint64_t i = 0; i < count && model < 0; ++i) {
         const uint8_t* record = ActionRecord(entries[i * kHintEntry]);
-        // The Reskill page's only entry is the bar's own Back (another kind of key record): Find's key replaces it anyway.
-        if ((entries[i * kHintEntry + 0x1a] & 7) == 7 && record && (record[0] == 1 || skills::IsReskillScreen(Screen())))
+        // On Reskill or the menu's Skills tab the only entry is the bar's own Back (another kind of key record): Find's key replaces it anyway.
+        if ((entries[i * kHintEntry + 0x1a] & 7) == 7 && record && (record[0] == 1 || skills::NoOwnHintBar(Screen())))
             model = static_cast<int>(i);
     }
     if (model < 0) {
@@ -2868,7 +2902,7 @@ void HintBarBody(HintSpan* span, void* options)
 
 void DrawReskillHints()
 {
-    if (!g_buttonHints || !g_originalHintBar || g_open || !skills::IsReskillScreen(Screen()))
+    if (!g_buttonHints || !g_originalHintBar || g_open || !skills::NoOwnHintBar(Screen()))
         return;
     // Inside a layer of Find's own: called outside one, the game's widget code faulted.
     ui::ProjectionFrame frame;
@@ -3052,6 +3086,11 @@ bool Init(const Config& config)
 {
     g_keys = config.keys;
     g_exact = config.exactMatch;
+    reflect::Init();
+    ReadItemLayout();
+    ui::ReadAssetLayout();
+    inv::ReadLayout();
+    recipes::ReadLayout();
     nativehighlight::SetThroughWalls(config.throughWalls);
     greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
@@ -3059,6 +3098,10 @@ bool Init(const Config& config)
     g_afterArrivalMs = static_cast<ULONGLONG>(config.glow.nearSeconds * 1000.0f);
     g_nativeReady = nativehighlight::Init();
     skills::Init(); // optional: Find on the Skills page
+    {
+        const reflect::Stats st = reflect::GetStats();
+        Log("layout: %d game field offsets read from the game itself (%d moved since 2026-11-04, %d not found)", st.found, st.moved, st.missing);
+    }
     uint8_t* playState = FindUnique("4C 8B DC 55 49 8D AB E8 FD FF FF 48 81 EC 10 03 00 00");
     if (!playState) {
         // Auto Loot (18-byte jump) or Creative Mode (safetyhook) may have hooked it already:

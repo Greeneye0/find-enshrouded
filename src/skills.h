@@ -11,7 +11,9 @@ namespace skills {
 // skills are being reset): read from the exe's reflection table in Init, so a patch renumbering them can't break it.
 constexpr int kScreen = 10;
 bool IsScreen(int screen);
-bool IsReskillScreen(int screen); // SkillTreeRespec: the page has no hint bar of its own
+bool IsReskillScreen(int screen); // SkillTreeRespec
+// The skill tree is showing without a hint bar of its own: Reskill.
+bool NoOwnHintBar(int screen);
 // Runs draw inside a UI layer of Find's own (the game's widget calls need an open layer); false without one.
 // With a size, the layer's root is placed at the top left with that size (full-screen UI units), for aligned children.
 bool InOwnLayer(const char* name, void (*draw)(void*), void* arg, float width = 0, float height = 0);
