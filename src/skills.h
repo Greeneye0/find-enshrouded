@@ -7,7 +7,14 @@
 // descriptions in the game's language, a gold pulse on found nodes and centring the view.
 namespace skills {
 
-constexpr int kScreen = 10; // keen::HudScreenType SkillTree
+// keen::HudScreenType SkillTree (10 in the build of 2026-11-04) and SkillTreeRespec (11, the same page while
+// skills are being reset): read from the exe's reflection table in Init, so a patch renumbering them can't break it.
+constexpr int kScreen = 10;
+bool IsScreen(int screen);
+bool IsReskillScreen(int screen); // SkillTreeRespec: the page has no hint bar of its own
+// Runs draw inside a UI layer of Find's own (the game's widget calls need an open layer); false without one.
+// With a size, the layer's root is placed at the top left with that size (full-screen UI units), for aligned children.
+bool InOwnLayer(const char* name, void (*draw)(void*), void* arg, float width = 0, float height = 0);
 
 // One skill as the search lists it: every node of that name (attribute nodes repeat).
 struct Skill {

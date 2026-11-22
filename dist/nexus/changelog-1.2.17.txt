@@ -1,0 +1,3 @@
+Skill search works on the Reskill page too (the skill tree you get when resetting skills): Shift+F opens it, found skills pulse gold, and its hint bar shows the Find key.
+Reported bugs fixed:
+Shift+F did nothing on the Reskill page (reported by Naft).

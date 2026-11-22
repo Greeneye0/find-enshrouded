@@ -31,6 +31,45 @@
 namespace skills {
 namespace {
 
+int g_screens[2] = {10, 11}; // SkillTree, SkillTreeRespec
+
+// keen::HudScreenType's reflection entries are 0x28 bytes: {const char* name, u64 length, u64 value, ...}, in order;
+// SkillTree is followed by SkillTreeRespec. Both are looked up by name in the exe's .rdata.
+void ReadScreenNumbers()
+{
+    auto base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
+    auto nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);
+    const uintptr_t lo = reinterpret_cast<uintptr_t>(base), hi = lo + nt->OptionalHeader.SizeOfImage;
+    auto named = [&](uint64_t text, uint64_t length, const char* want) {
+        size_t n = strlen(want);
+        return length == n && text >= lo && text + n <= hi && memcmp(reinterpret_cast<const void*>(text), want, n) == 0;
+    };
+    auto sec = IMAGE_FIRST_SECTION(nt);
+    int found = 0;
+    uint64_t values[2] = {};
+    for (unsigned s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++sec) {
+        if (memcmp(sec->Name, ".rdata", 6) != 0)
+            continue;
+        const uint8_t* p = base + sec->VirtualAddress;
+        for (size_t off = 0; off + 0x50 <= sec->Misc.VirtualSize; off += 8) {
+            uint64_t e[8];
+            memcpy(e, p + off, sizeof(e));
+            if (e[1] != 9 || e[6] != 15 || !named(e[0], 9, "SkillTree") || !named(e[5], 15, "SkillTreeRespec"))
+                continue;
+            values[0] = e[2];
+            values[1] = e[7];
+            ++found;
+        }
+    }
+    if (found == 1 && values[0] < 256 && values[1] < 256) {
+        g_screens[0] = static_cast<int>(values[0]);
+        g_screens[1] = static_cast<int>(values[1]);
+        Log("skills: the Skills page is screen %d (%d while resetting skills)", g_screens[0], g_screens[1]);
+    } else {
+        Log("skills: screen numbers not found in the game (%d matches), using %d and %d", found, g_screens[0], g_screens[1]);
+    }
+}
+
 using UiCtxFn = void* (*)();
 using BeginWidgetFn = void (*)(void* widget, uint64_t parent);
 using EndWidgetFn = void (*)(void* widget);
@@ -532,8 +571,34 @@ bool g_inPage = false;   // the page draws the pulse (its hint bar call is Find'
 
 } // namespace
 
+bool InOwnLayer(const char* name, void (*draw)(void*), void* arg, float width, float height)
+{
+    if (!g_beginLayer || !g_endLayer || !g_named || !g_end || !g_setSize)
+        return false;
+    const ui::Text text = ui::MakeText(name);
+    LayerScope scope(text);
+    if (uint8_t* node = scope.root.Handle(); node && width > 0 && height > 0) {
+        *reinterpret_cast<uint16_t*>(node + 0x6e) = 0x0101; // placed, not laid out
+        *reinterpret_cast<uint64_t*>(node + 0x70) = 0;
+        g_setSize(node, Pack(width, height));
+    }
+    draw(arg);
+    return true;
+}
+
+bool IsReskillScreen(int screen)
+{
+    return screen >= 0 && screen == g_screens[1];
+}
+
+bool IsScreen(int screen)
+{
+    return screen >= 0 && (screen == g_screens[0] || screen == g_screens[1]);
+}
+
 bool Init()
 {
+    ReadScreenNumbers();
     auto find = [](auto& out, const char* name, const char* pattern) {
         out = reinterpret_cast<std::remove_reference_t<decltype(out)>>(FindUnique(pattern));
         if (!out)
@@ -738,7 +803,7 @@ void Draw(int screen)
         Clear();
         return;
     }
-    if (screen != kScreen)
+    if (!IsScreen(screen))
         return;
     uint8_t* canvas = nullptr;
     uint8_t* tree = TreeWithCanvas(canvas);
@@ -759,8 +824,8 @@ void Draw(int screen)
     }
     if (!f.count)
         return;
-    if (g_inPage && g_pushDepth)
-        g_frameReady = true; // the page draws it (DrawInPage)
+    if (g_inPage && g_pushDepth && screen == g_screens[0])
+        g_frameReady = true; // the page draws it (DrawInPage); the Reskill page has no hint bar to draw it from
     else
         DrawPulse(f);
 }

@@ -1035,7 +1035,7 @@ Index BuildAny()
     LARGE_INTEGER f, a, b;
     QueryPerformanceFrequency(&f);
     QueryPerformanceCounter(&a);
-    Index ix = Screen() == skills::kScreen ? BuildSkillIndex() : BuildIndex();
+    Index ix = skills::IsScreen(Screen()) ? BuildSkillIndex() : BuildIndex();
     QueryPerformanceCounter(&b);
     DevLog("  index built in %.0f ms", 1000.0 * (b.QuadPart - a.QuadPart) / f.QuadPart);
     return ix;
@@ -2118,6 +2118,8 @@ SRWLOCK g_requestLock = SRWLOCK_INIT;
 char g_request[128]{};
 bool g_requestPending = false;
 
+void DrawReskillHints(); // the Reskill page's bottom bar, with Find's tip
+
 void Tick()
 {
     if (g_tracePending) {
@@ -2131,6 +2133,7 @@ void Tick()
     if (g_hotPaused) return;
     CraftingWindowTick();
     skills::Draw(Screen());
+    DrawReskillHints();
     char request[128]{};
     bool pending;
     AcquireSRWLockExclusive(&g_requestLock);
@@ -2166,7 +2169,7 @@ void Tick()
     g_openPad.Set(g_keys.open);
     {
         const int playing = Screen();
-        if (g_open || playing == kScreenPlaying || playing == kScreenInventory || playing == skills::kScreen)
+        if (g_open || playing == kScreenPlaying || playing == kScreenInventory || skills::IsScreen(playing))
             g_padLiveUntil = GetTickCount64() + 250;
         g_padHiddenNow = g_open ? uint16_t(PadButtons(g_keys.up) | PadButtons(g_keys.down) | PadButtons(g_keys.close) | PadButtons(g_keys.exact) |
                                            (g_selected >= 0 ? PadButtons(g_keys.confirm) : 0))
@@ -2184,7 +2187,7 @@ void Tick()
     if (g_dialogTest.open) {
         g_dialogTest.open = false;
         if (!g_open && (g_dialogTest.screen == kScreenPlaying || g_dialogTest.screen == kScreenInventory ||
-                        g_dialogTest.screen == skills::kScreen))
+                        skills::IsScreen(g_dialogTest.screen)))
             g_openPending = true;
     }
 #endif
@@ -2192,8 +2195,12 @@ void Tick()
     // renaming (47), a signpost (19) or any other screen, where Shift+F is just a capital F.
     if (pressed && !g_open) {
         int screen = Screen();
-        if (screen == kScreenPlaying || screen == kScreenInventory || screen == skills::kScreen)
+        if (screen == kScreenPlaying || screen == kScreenInventory || skills::IsScreen(screen))
             g_openPending = true;
+        else if (static bool seen[256]; screen >= 0 && screen < 256 && !seen[screen]) {
+            seen[screen] = true;
+            Log("hotkey: pressed on screen %d, where Find doesn't open", screen);
+        }
     }
     // Open when the key comes up, so its letter has already gone to the game, not the field.
     if (g_openPending && !PartsHeld(g_keys.open, held, pad)) {
@@ -2286,7 +2293,7 @@ void Tick()
         CloseSearch(" (screen closed)");
         return;
     }
-    if (g_index.skills && Screen() != skills::kScreen) {
+    if (g_index.skills && !skills::IsScreen(Screen())) {
         CloseSearch(" (Skills page closed)");
         return;
     }
@@ -2775,6 +2782,11 @@ struct HintSpan {
 using HintBarFn = void (*)(HintSpan* span, void* options);
 using HintEntryFn = uint64_t (*)(uint8_t* entry, void* params);
 HintBarFn g_originalHintBar = nullptr;
+// 140c3a440 doMenuButtonHints(entries, align, margins, backdrop, compact): the menus' bottom bar. An empty list gets the
+// game's Back entry. Find draws it on the Reskill page, which has no bar of its own, and HintBarHook adds Find's tip.
+using ButtonHintsFn = void (*)(HintSpan* entries, uint16_t align, const float* margins, char backdrop, char compact);
+ButtonHintsFn g_buttonHints = nullptr;
+bool g_drawingOwnBar = false;      // Find's own bar on the Reskill page is drawing
 HintEntryFn g_originalHintEntry = nullptr;
 constexpr size_t kHintEntry = 0x48;
 constexpr int kMaxHintEntries = 16;
@@ -2807,7 +2819,7 @@ void HintBarBody(HintSpan* span, void* options)
     static uint64_t pageCount = 0;
     static ULONGLONG pageAt = 0;
     const ULONGLONG now = GetTickCount64();
-    if (g_open || Screen() != skills::kScreen || !span || !span->data || !span->count || span->count >= kMaxHintEntries ||
+    if (g_open || !skills::IsScreen(Screen()) || !span || !span->data || !span->count || span->count >= kMaxHintEntries ||
         !greeneye::hints::ShowsOn(g_keys.open, pad)) {
         g_originalHintBar(span, options);
         return;
@@ -2828,10 +2840,16 @@ void HintBarBody(HintSpan* span, void* options)
     int model = -1;
     for (uint64_t i = 0; i < count && model < 0; ++i) {
         const uint8_t* record = ActionRecord(entries[i * kHintEntry]);
-        if ((entries[i * kHintEntry + 0x1a] & 7) == 7 && record && record[0] == 1)
+        // The Reskill page's only entry is the bar's own Back (another kind of key record): Find's key replaces it anyway.
+        if ((entries[i * kHintEntry + 0x1a] & 7) == 7 && record && (record[0] == 1 || skills::IsReskillScreen(Screen())))
             model = static_cast<int>(i);
     }
     if (model < 0) {
+#ifdef FIND_DEV
+        if (static int logged = 0; logged++ < 3 && count)
+            DevLog("hint bar: no entry to copy on screen %d: entry 0 action %u flags %02x record kind %d", Screen(), entries[0],
+                entries[0x1a], ActionRecord(entries[0]) ? ActionRecord(entries[0])[0] : -1);
+#endif
         g_originalHintBar(span, options);
         return;
     }
@@ -2848,13 +2866,37 @@ void HintBarBody(HintSpan* span, void* options)
     g_findTip = nullptr;
 }
 
+void DrawReskillHints()
+{
+    if (!g_buttonHints || !g_originalHintBar || g_open || !skills::IsReskillScreen(Screen()))
+        return;
+    // Inside a layer of Find's own: called outside one, the game's widget code faulted.
+    ui::ProjectionFrame frame;
+    if (!ui::CaptureProjection(frame))
+        return;
+    if (!skills::InOwnLayer("findReskillHints", [](void*) {
+            __try {
+                HintSpan none{nullptr, 0};
+                alignas(16) const float margins[4] = {0.0f, 10.0f, 0.0f, 0.0f}; // as the inventory's bottom bar
+                g_drawingOwnBar = true;
+                g_buttonHints(&none, 0x303, margins, 0, 0); // bottom right
+                g_drawingOwnBar = false;
+            } __except (FaultFilter(GetExceptionInformation(), "reskill hint bar")) {
+                g_drawingOwnBar = false;
+                g_buttonHints = nullptr;
+                Log("hint bar: fault drawing the Reskill page's bar, off until the game restarts");
+            }
+        }, nullptr, frame.viewport[2], frame.viewport[3]))
+        g_buttonHints = nullptr;
+}
+
 void HintBarHook(HintSpan* span, void* options)
 {
     hot::Lease lease;
     if (!lease || g_hotPaused)
         return g_originalHintBar(span, options);
     HintBarBody(span, options);
-    if (Screen() == skills::kScreen)
+    if (skills::IsScreen(Screen()))
         skills::DrawInPage(); // the pulse inside the page, under its node card
 }
 
@@ -2898,6 +2940,9 @@ void HookHintBar()
                     }
         }
     }
+    if (barCalls >= 1)
+        g_buttonHints = reinterpret_cast<ButtonHintsFn>(FindUnique(
+            "48 8B C4 48 89 58 10 48 89 70 18 55 57 41 56 48 8D A8 A8 FA FF FF 48 81 EC 40 06 00 00 44 0F 29"));
     skills::UsePageDrawing(barCalls >= 1);
     if (barCalls >= 1 && entryCalls == 1)
         Log("hint bar: Find's tip on the Skills page (%d screen calls)", barCalls);

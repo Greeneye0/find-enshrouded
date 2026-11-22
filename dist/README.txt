@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.16
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.17
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -57,7 +57,7 @@ THE SKILL TREE
 On the Skills page, Shift+F (LB+X on a controller) searches the skill tree instead of your
 chests. Type part of a skill's name or of what it does, in the game's language; categories
 such as Guardian are listed too. The skills found pulse gold for 5 seconds, and a single
-match brings the view to it. Esc closes only the search.
+match brings the view to it. Esc closes only the search. The same works on the Reskill page.
 
 
 WHAT YOU CAN SEARCH FOR
@@ -127,6 +127,12 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.17
+- Skill search works on the Reskill page too (the skill tree you get when resetting
+  skills): Shift+F opens it, found skills pulse gold, and its hint bar shows the Find key.
+Reported bugs fixed:
+- Shift+F did nothing on the Reskill page (reported by Naft).
+
 1.2.16
 - New setting through_walls in find.ini: how lit chests, NPCs and stations show through
   walls. glow (the default) is the glowing 3D copy, icon a marker over each, lighter on
