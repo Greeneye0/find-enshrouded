@@ -35,6 +35,13 @@ void* Client(); // *(**(G + 0xd0) + 0x38), or null outside a world
 // Find's marker (the game's five-point star) centred at (cx, cy) in full-screen UI units, size x size, on a layer of its own
 // (the compass markers). Only inside the game's UI frame.
 bool DrawStorageIcon(float cx, float cy, float size, uint32_t rgba, float alpha);
+// Several of them on ONE layer. A layer for each star cost HadToRegister about 1 ms apiece, four UI passes a frame
+// (2026-11-25: 59 fps fell to 26 with five on the compass).
+struct IconSpot { float cx, cy, alpha; };
+bool DrawStorageIcons(const IconSpot* spots, int count, float size, uint32_t rgba);
+// The game builds its UI four times a frame and only one pass (the UI context's mode 4) reaches the screen: true in
+// that pass (and when the mode can't be read). Drawing that needs no input or layout belongs in it alone.
+bool DrawPass();
 // Any of the game's UI textures (FbUiBundle offset) the same way, and a small label (dev previews).
 bool DrawAssetIcon(size_t asset, float cx, float cy, float size, uint32_t rgba, float alpha);
 bool DrawSmallLabel(float x, float y, const char* utf8);

@@ -1,0 +1,3 @@
+Fixed: the frame rate dropped while anything glowed (59 to about 25 fps on one PC). For the compass stars Find looked up the game's window among all open windows several times a frame; it now remembers it. Thanks to HadToRegister for the test runs that found it.
+debug_fps_test counts real frames (1.2.20 logged four times the frame rate).
+Comes with Greeneye Loader 1.2.4, which can also run on Linux (Steam Deck, Proton) as dinput8.dll: see greeneye\linux\LINUX.txt. Nothing changes on Windows.

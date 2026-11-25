@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.20
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.21
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -128,6 +128,16 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.21
+Reported bug fixed:
+- The frame rate dropped while anything glowed (59 to about 25 fps on HadToRegister's PC):
+  for the compass stars Find looked up the game's window among all open windows several
+  times a frame. It now remembers it. Thanks to HadToRegister for the test runs that
+  found it.
+- debug_fps_test counts real frames (1.2.20 logged four times the frame rate).
+- Comes with Greeneye Loader 1.2.4, which can also run on Linux (Steam Deck, Proton) as
+  dinput8.dll: see greeneye\linux\LINUX.txt. Nothing changes on Windows.
+
 1.2.20
 - New debug setting for frame rate drops while things glow: add the line
   debug_fps_test = 1 to find.ini. After a search Find then keeps the glow on for about

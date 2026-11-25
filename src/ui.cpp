@@ -1526,6 +1526,59 @@ namespace ui {
 // FbUiBundle icons.genericIcons.star5: the five-point star that marks found chests (reflected types, build 2026-11-04;
 // chosen 2026-11-17 from the game's icons; the map mod pins Find's chests with the same one).
 
+bool DrawPass()
+{
+    __try {
+        auto* g = g_uiCtx ? static_cast<uint8_t*>(g_uiCtx()) : nullptr;
+        const uint8_t* ctx = g ? *reinterpret_cast<uint8_t* const*>(g + 0x18) : nullptr;
+        return !ctx || *reinterpret_cast<const uint32_t*>(ctx + 8) == 4u;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return true;
+    }
+}
+
+void* g_iconFault;
+bool DrawStorageIcons(const IconSpot* spots, int count, float size, uint32_t rgba)
+{
+    uint8_t* assets = Assets();
+    auto& n = greeneye::hints::Game();
+    if (count <= 0 || !assets || !n.beginLayer || !n.endLayer || !n.named || !n.end || !g_begin || !g_end || !g_drawImage)
+        return false;
+    __try {
+        alignas(16) uint8_t layer[0x400]{};
+        const auto layerName = greeneye::hints::MakeText("findCompass");
+        n.beginLayer(layer, &layerName, 1, 0x17, -1, 0);
+        alignas(16) uint8_t root[0x80]{};
+        n.named(root, &layerName);
+        alignas(16) uint8_t tmp[16];
+        // The layer and its widgets are made in every UI pass (made in the drawing pass alone, nothing showed:
+        // 2026-11-25); the images only in the pass that draws.
+        const bool draw = DrawPass();
+        const uint32_t* image = draw ? g_image(g_uiCtx(), tmp, assets + kAssetStorageIcon) : nullptr;
+        for (int i = 0; i < count; ++i) {
+            Widget icon;
+            g_begin(icon.raw, 0);
+            if (uint8_t* node = icon.Handle()) {
+                *reinterpret_cast<uint16_t*>(node + 0x6e) = 0x0101;
+                *reinterpret_cast<uint64_t*>(node + 0x70) = Pack(spots[i].cx - size / 2, spots[i].cy - size / 2);
+                g_setSize(node, Pack(size, size));
+                float rect[4];
+                memcpy(rect, node + 0x114, sizeof(rect));
+                uint64_t c = Colour(rgba, spots[i].alpha);
+                if (draw) g_drawImage(icon.raw, rect, image, &c);
+            }
+            g_end(icon.raw);
+        }
+        n.end(root);
+        n.endLayer(layer);
+        return true;
+    } __except (g_iconFault = GetExceptionInformation()->ExceptionRecord->ExceptionAddress, EXCEPTION_EXECUTE_HANDLER) {
+        static bool logged;
+        if (!logged) { logged = true; Log("compass: fault drawing the stars at %p (game at %p)", g_iconFault, static_cast<void*>(GetModuleHandleW(nullptr))); }
+        return false;
+    }
+}
+
 bool DrawStorageIcon(float cx, float cy, float size, uint32_t rgba, float alpha)
 {
     return DrawImageAt(cx - size / 2, cy - size / 2, size, size, kAssetStorageIcon, rgba, alpha, "findCompass");

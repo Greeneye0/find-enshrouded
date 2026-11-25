@@ -1338,7 +1338,10 @@ void OpenScreen(uint8_t screen)
 uint8_t* g_lockedWindow = nullptr;
 float g_savedMouseScale = 1.0f;
 
-HWND GameWindow()
+// The game's window, found by going through every top-level window of the desktop: slow, and slower the more windows
+// are open. The compass asked in every UI pass (four a frame) while anything glowed, which took HadToRegister's 59 fps
+// to 26 (2026-11-25; 5.3 ms a pass on his PC, 0.3 on ours). GameWindow() below remembers it.
+HWND FindGameWindow()
 {
     struct Best {
         DWORD pid;
@@ -1359,6 +1362,22 @@ HWND GameWindow()
         },
         reinterpret_cast<LPARAM>(&best));
     return best.hwnd;
+}
+
+HWND GameWindow()
+{
+    static HWND window;
+    static ULONGLONG lookedAt;
+    DWORD pid = 0;
+    const ULONGLONG now = GetTickCount64();
+    // Looked up again every 5 s all the same: a larger window of the game may have opened since.
+    if (window && now - lookedAt < 5000 && IsWindow(window) && GetWindowThreadProcessId(window, &pid) &&
+        pid == GetCurrentProcessId() && IsWindowVisible(window))
+        return window;
+    if (!window && lookedAt && now - lookedAt < 1000)
+        return nullptr; // not there a moment ago: look again in a second
+    lookedAt = now;
+    return window = FindGameWindow();
 }
 
 // The mouse wheel scrolls the list: the game window's procedure is replaced while the search
@@ -2649,6 +2668,8 @@ void DrawCompass()
     if (nearest.size() > static_cast<size_t>(kCompassMax))
         nearest.resize(kCompassMax);
     float pulse = 0.8f + 0.2f * std::sin(static_cast<float>(GetTickCount64() % kIconPulseMs) / kIconPulseMs * 6.2831853f);
+    ui::IconSpot spots[kCompassMax];
+    int count = 0;
     for (auto it = nearest.rbegin(); it != nearest.rend(); ++it) { // the nearest drawn last, on top
         const Glow& g = g_glows[it->second];
         float dx = g.pos[0] - px, dz = g.pos[2] - pz;
@@ -2659,8 +2680,9 @@ void DrawCompass()
             continue;
         float edge = std::fabs(rel) / kCompassHalfSpan;
         float alpha = pulse * (edge > 0.8f ? (1.0f - edge) / 0.2f : 1.0f); // fades out at the strip's ends
-        ui::DrawStorageIcon(centre + g_compassSign * rel * kCompassUiPerRad, kCompassY, kCompassIcon, kIconColour, alpha);
+        spots[count++] = {centre + g_compassSign * rel * kCompassUiPerRad, kCompassY, alpha};
     }
+    ui::DrawStorageIcons(spots, count, kCompassIcon, kIconColour); // all on one layer
 }
 
 void SafeDrawGlows()
@@ -2732,6 +2754,9 @@ void FpsTestEnd(const char* why)
 
 void FpsTestFrame(LARGE_INTEGER now)
 {
+    // The game builds its UI four times a frame and this runs in each pass: frames are counted in the one that draws
+    // (1.2.20 counted passes, so its numbers were four times the frame rate).
+    if (!ui::DrawPass()) return;
     FpsTest& t = g_fps;
     LARGE_INTEGER f; QueryPerformanceFrequency(&f);
     // This frame's share of Find's own time, taken every frame so a state starts from zero.
