@@ -59,6 +59,8 @@ Open the Skills page and press [b]Shift+F[/b] (LB+X on a controller) to search t
 
 [b]Install by hand:[/b] Vortex does not know the Greeneye Loader yet.
 
+[b]Linux (Steam Deck, Proton, Wine):[/b] after copying the files, rename [b]dbgcore.dll[/b] to [b]dinput8.dll[/b] (Wine never loads the name dbgcore.dll), then in Steam right-click Enshrouded > Properties > Launch Options and enter [b]WINEDLLOVERRIDES="dinput8=n,b" %command%[/b]. The full guide is [i]greeneye\linux\LINUX.txt[/i] in the download: Lutris, plain Wine, dedicated servers, and what to do when another mod already uses dinput8.dll.
+
 [b]Updating from 1.0.x:[/b] delete [i]wsock32.dll[/i] from the game folder. Your [i]find.ini[/i] moves to [i]greeneye\find\[/i] by itself.
 
 [b]Uninstall:[/b] delete [i]greeneye\find[/i]; if no other Greeneye mod is left, also [i]dbgcore.dll[/i] and the [i]greeneye[/i] folder.

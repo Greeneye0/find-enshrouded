@@ -22,6 +22,14 @@ greeneye\find\ by itself on the first start.
 
 Install it by hand: Vortex does not know the Greeneye Loader yet.
 
+Linux (Steam Deck, Proton, Wine): after copying the files,
+1. rename dbgcore.dll to dinput8.dll (Wine never loads the name dbgcore.dll), and
+2. in Steam, right-click Enshrouded > Properties > Launch Options and enter
+       WINEDLLOVERRIDES="dinput8=n,b" %command%
+greeneye\linux\LINUX.txt has the full guide: Lutris, plain Wine, dedicated servers, and what
+to do when another mod already uses dinput8.dll. This needs the Greeneye Loader 1.2.4 that
+comes in this zip.
+
 
 USE
 ---

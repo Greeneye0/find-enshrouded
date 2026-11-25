@@ -12,6 +12,8 @@ name, and the chests that hold it light up. Open one and the items you searched 
    `enshrouded.exe` (Steam: right-click Enshrouded > Manage > Browse local files).
 3. Start the game, stand inside one of your bases and press Shift+F.
 
+Linux (Steam Deck, Proton, Wine): the release zip's `greeneye/linux/LINUX.txt` has the steps. In short, rename `dbgcore.dll` to `dinput8.dll` and add `WINEDLLOVERRIDES="dinput8=n,b" %command%` to the game's Steam launch options (needs Greeneye Loader 1.2.4, included).
+
 Uninstall: delete `wsock32.dll`, plus `find.ini` and `find.log` if present. Client-side only:
 servers and other players need nothing. Find only reads your chests; it never moves an item.
 
