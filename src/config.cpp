@@ -207,6 +207,8 @@ Config LoadConfig()
             else
                 c.throughWalls = mode;
         }
+        if (key == "debug_deposit_glow")
+            c.depositGlow = value == "1" || _stricmp(value.c_str(), "on") == 0 || _stricmp(value.c_str(), "true") == 0;
         if (key == kExactKey)
             c.exactMatch = value == "1" || _stricmp(value.c_str(), "on") == 0 || _stricmp(value.c_str(), "true") == 0;
         for (size_t i = 0; i < sizeof(kNumbers) / sizeof(kNumbers[0]); ++i) {

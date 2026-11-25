@@ -3072,6 +3072,14 @@ bool QueueSearch(const char* text)
     if (!strcmp(text,"@dev-fps-off")) { nativehighlight::SetDevSwitch(3,false); return true; }
     if (!strcmp(text,"@dev-pulse-off")) { nativehighlight::SetDevSwitch(1,true); return true; }
     if (!strcmp(text,"@dev-pulse-on")) { nativehighlight::SetDevSwitch(1,false); return true; }
+    if (!strcmp(text,"@dev-sdf-keep")) { nativehighlight::SetDevSwitch(5,true); return true; }
+    if (!strcmp(text,"@dev-sdf-drop")) { nativehighlight::SetDevSwitch(5,false); return true; }
+    if (!strcmp(text,"@dev-cycle-on")) { nativehighlight::SetDevSwitch(7,true); return true; }
+    if (!strcmp(text,"@dev-cycle-off")) { nativehighlight::SetDevSwitch(7,false); return true; }
+    if (!strcmp(text,"@dev-jitter-on")) { nativehighlight::SetDevSwitch(6,true); return true; }
+    if (!strcmp(text,"@dev-jitter-off")) { nativehighlight::SetDevSwitch(6,false); return true; }
+    if (!strcmp(text,"@dev-move-always")) { nativehighlight::SetDevSwitch(4,true); return true; }
+    if (!strcmp(text,"@dev-move-changed")) { nativehighlight::SetDevSwitch(4,false); return true; }
     if (!strcmp(text,"@dev-hold-60s")) { InterlockedExchange64(&g_devHoldUntil,GetTickCount64()+60000); return true; }
     if (!strcmp(text,"@dev-hold-off")) { nativehighlight::SetStressTest(false); InterlockedExchange64(&g_devHoldUntil,0); return true; }
 #endif
@@ -3092,6 +3100,7 @@ bool Init(const Config& config)
     inv::ReadLayout();
     recipes::ReadLayout();
     nativehighlight::SetThroughWalls(config.throughWalls);
+    nativehighlight::SetDepositStyle(config.depositGlow);
     greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
     g_arrivedMeters = config.glow.nearMeters;

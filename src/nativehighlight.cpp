@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include "nativehighlight.h"
@@ -48,6 +49,12 @@ struct Applied {
     int64_t sourcePos[3];
     float sourceRot[4], sourceScale[3], radius;
     bool parked; // the copy is parked inside its source (not needed this frame)
+    // What the copy was last given, so an unchanged transform or binding isn't sent again (HadToRegister's 3050:
+    // a copy moved every frame, even standing still, looked like the cost).
+    detail::Spatial placed;
+    bool havePlaced;
+    uint32_t boundTo;
+    LONG epoch; // dev cycle: the copy is remade when this falls behind
 };
 using NextFn = bool (*)(void*, void*, uint32_t);
 using SetFn = void (*)(void*, const Span*, const Span*);
@@ -175,8 +182,50 @@ void RemoveProxy(Applied& a) {
     if (g_instance(a.renderer,a.proxy,true)==a.proxyInstance) {
         Span handles{&a.proxy,1}; g_delete(a.renderer,&handles);
     }
-    a.proxy=0; a.proxyInstance=nullptr; a.parked=false;
+    a.proxy=0; a.proxyInstance=nullptr; a.parked=false; a.havePlaced=false; a.boundTo=0;
     InterlockedDecrement(&g_copyCount);
+}
+
+// A render instance made with the renderer's create also gets the model's distance field (RenderModel.sdf) as a second
+// instance in the renderer's SDF scene (renderer + 0x9f8, instance + 0x134: exe 158eb0), which lighting and shadows
+// trace. A copy needs none: it only stands in front of walls for the eye. This is the SDF scene's own delete (15ceb0),
+// the one the renderer's instance delete calls.
+using SdfDeleteFn = void (*)(void*, uint32_t);
+SdfDeleteFn g_sdfDelete;
+volatile LONG g_devKeepSdf; // dev: leave the copy its distance field, as before 2026-11-24
+volatile LONG g_sdfDropped;
+volatile LONG64 g_applyTicks, g_placeTicks, g_stageTicks; // dev: time in Apply, PlaceCopies and the game's staging call
+void DropSdf(Applied& a) {
+#ifndef FIND_DEV
+    (void)a; // dev builds only: it changed nothing measurable, and the two offsets below aren't read from the game yet
+#else
+    if (!g_sdfDelete || InterlockedCompareExchange(&g_devKeepSdf, 0, 0) || !a.proxyInstance) return;
+    auto instance = static_cast<uint8_t*>(a.proxyInstance);
+    uint32_t sdf = Read<uint32_t>(instance, 0x134);
+    void* scene = Read<void*>(a.renderer, 0x9f8);
+    if (!sdf || !scene) return;
+    g_sdfDelete(scene, sdf);
+    const uint32_t none = 0;
+    memcpy(instance + 0x134, &none, sizeof(none));
+    InterlockedIncrement(&g_sdfDropped);
+#endif
+}
+volatile LONG g_devCycle, g_epoch; // dev: the A/B cycle below; a new epoch remakes every copy
+volatile LONG g_devJitter; // dev: every copy a millimetre aside on alternate frames, as a turning camera moves them
+volatile LONG g_devAlwaysMove; // dev: move and bind every copy every frame, as before 2026-11-24
+volatile LONG g_moved, g_moveSkipped;
+// Moves the copy, unless it already stands there.
+void Move(Applied& a, const Spatial& transform, bool created) {
+    if (!created && a.havePlaced && !InterlockedCompareExchange(&g_devAlwaysMove, 0, 0) &&
+        memcmp(&a.placed, &transform, sizeof(transform)) == 0) {
+        InterlockedIncrement(&g_moveSkipped);
+        return;
+    }
+    Span handles{&a.proxy,1}, transforms{&transform,1};
+    g_transform(a.renderer,&handles,&transforms,created);
+    a.placed = transform;
+    a.havePlaced = true;
+    InterlockedIncrement(&g_moved);
 }
 
 // A copy not needed for now (its model right in view) is parked inside its source at a tiny scale instead of deleted:
@@ -190,6 +239,7 @@ void Park(Applied& a) {
     Span handles{&a.proxy,1}, transforms{&parked,1};
     g_transform(a.renderer,&handles,&transforms,false);
     a.parked = true;
+    a.havePlaced = false;
 }
 
 volatile LONG g_stageCalls, g_viewEyes, g_placed, g_applies, g_appliesSkipped; // dev: what the staging hook and Apply did
@@ -245,7 +295,7 @@ int UpdateProxy(Applied& a, uint8_t* source) {
         return 0;
     }
     if (a.proxy && g_instance(a.renderer,a.proxy,true)!=a.proxyInstance) { // gone with its renderer (a world left)
-        a.proxy=0; a.proxyInstance=nullptr;
+        a.proxy=0; a.proxyInstance=nullptr; a.havePlaced=false; a.boundTo=0;
         InterlockedDecrement(&g_copyCount);
     }
     const bool created = !a.proxy;
@@ -255,13 +305,18 @@ int UpdateProxy(Applied& a, uint8_t* source) {
         if (!a.proxy) return -1;
         a.proxyInstance=g_instance(a.renderer,a.proxy,true);
         InterlockedIncrement(&g_copyCount);
+        DropSdf(a);
         DevLog("copy %08x of %08x (resource kind %u, binding %u, attachments %08x/%08x, copy's %08x/%08x)", a.proxy, a.handle,
             Read<uint8_t>(resource, 0x14), Read<uint32_t>(source, 0x130), Read<uint32_t>(resource, 0x6c), Read<uint32_t>(resource, 0x70),
             Read<uint32_t>(a.proxyInstance, 0x134), Read<uint32_t>(a.proxyInstance, 0x138));
     }
-    Span handles{&a.proxy,1}, transforms{&transform,1};
-    if (uint32_t binding=Read<uint32_t>(source,0x130)) g_bind(a.renderer,&handles,binding);
-    if (created || !g_stageNext) g_transform(a.renderer,&handles,&transforms,created);
+    Span handles{&a.proxy,1};
+    if (uint32_t binding=Read<uint32_t>(source,0x130))
+        if (created || binding != a.boundTo || InterlockedCompareExchange(&g_devAlwaysMove, 0, 0)) {
+            g_bind(a.renderer,&handles,binding);
+            a.boundTo = binding;
+        }
+    if (created || !g_stageNext) Move(a, transform, created);
     Set(a.renderer,a.proxy,kGroup);
     return 1;
 }
@@ -373,6 +428,7 @@ void Apply(void* iter, void* view, const System& system) {
             if (instance[0x78] != 0 && instance[0x78] != a.last) continue;
             Set(renderer, handles[i], kGroup);
             a.haveSilhouette=false;
+            if (LONG epoch = InterlockedCompareExchange(&g_epoch, 0, 0); a.epoch != epoch) { RemoveProxy(a); a.epoch = epoch; }
             if (UpdateProxy(a,instance) >= 0) continue; // its copy shows it through walls (or it's right in view): no silhouette
             auto resource=Read<uint8_t*>(instance,0x108);
             auto asset=resource?Read<uint8_t*>(resource,0x38):nullptr;
@@ -420,12 +476,16 @@ bool NextHookBody(void* iter, void* view, uint32_t size, const System* system)
     bool next = g_next(iter, view, size);
     if (next || g_inHook || !system) return next;
     g_inHook = true;
+    LARGE_INTEGER t0, t1;
+    QueryPerformanceCounter(&t0);
     __try { Apply(iter, view, *system); }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         InterlockedExchange(&g_pulsing, 0);
         static volatile LONG logged;
         if (!InterlockedExchange(&logged, 1)) Log("native: model layout guard failed; skipped render update");
     }
+    QueryPerformanceCounter(&t1);
+    InterlockedExchangeAdd64(&g_applyTicks, t1.QuadPart - t0.QuadPart);
     g_inHook = false;
     return next;
 }
@@ -446,15 +506,17 @@ void PlaceCopiesInner(void* renderer) {
         memcpy(transform.scale, a.sourceScale, sizeof(a.sourceScale));
         if (!detail::PerspectiveCopy(eye, forward, nearest, transform, a.radius)) { Park(a); continue; }
         a.parked = false;
-        Span handles{&a.proxy,1},transforms{&transform,1};
-        g_transform(a.renderer,&handles,&transforms,false);
+        if (InterlockedCompareExchange(&g_devJitter, 0, 0) && (InterlockedCompareExchange(&g_frame, 0, 0) & 1))
+            transform.position[0] += 4294967; // 1 mm (positions are 32.32 fixed point)
+        Move(a, transform, false);
         InterlockedIncrement(&g_placed);
     }
     static ULONGLONG at;
     if (GetTickCount64() - at > 3000) {
         at = GetTickCount64();
-        DevLog("copies: %ld staging calls, %ld with the client's view, %ld placements, %ld updates (%ld skipped) in 3 s; eye %.2f %.2f %.2f",
+        DevLog("copies: %ld staging calls, %ld with the client's view, %ld placements (%ld moved, %ld unchanged), %ld updates (%ld skipped) in 3 s; eye %.2f %.2f %.2f",
             InterlockedExchange(&g_stageCalls, 0), InterlockedExchange(&g_viewEyes, 0), InterlockedExchange(&g_placed, 0),
+            InterlockedExchange(&g_moved, 0), InterlockedExchange(&g_moveSkipped, 0),
             InterlockedExchange(&g_applies, 0), InterlockedExchange(&g_appliesSkipped, 0), eye[0], eye[1], eye[2]);
     }
 }
@@ -469,20 +531,63 @@ void PlaceCopies(void* renderer) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 volatile LONG g_devFps; // dev: log frames a second
+// dev: an interleaved A/B for a GPU other programs load unevenly. Five states of 2 s each, round and round; the first
+// 0.5 s of each (copies being remade) isn't counted. Frames and time are summed per state and logged every minute.
+void DevCycle() {
+    static const char* const names[5] = {"no copies", "sdf moving", "no sdf moving", "sdf still", "no sdf still"};
+    static double seconds[5]; static long frames[5]; static int state = -1; static LARGE_INTEGER last, entered, logged, freq;
+    LARGE_INTEGER now; QueryPerformanceCounter(&now);
+    if (!freq.QuadPart) { QueryPerformanceFrequency(&freq); last = entered = logged = now; }
+    const int want = static_cast<int>(GetTickCount64() / 2000 % 5);
+    if (want != state) {
+        state = want;
+        entered = now;
+        InterlockedExchange(&g_throughWalls, state == 0 ? 1 : 0);
+        InterlockedExchange(&g_devKeepSdf, state == 1 || state == 3);
+        InterlockedExchange(&g_devJitter, state == 1 || state == 2);
+        InterlockedIncrement(&g_epoch);
+    } else if ((now.QuadPart - entered.QuadPart) * 2 > freq.QuadPart) {
+        seconds[state] += double(now.QuadPart - last.QuadPart) / freq.QuadPart;
+        ++frames[state];
+    }
+    last = now;
+    if (now.QuadPart - logged.QuadPart > 60 * freq.QuadPart) {
+        logged = now;
+        char line[400]; int n = 0;
+        for (int i = 0; i < 5; ++i)
+            n += snprintf(line + n, sizeof(line) - n, "%s%s %.2f ms (%ld frames)", i ? ", " : "", names[i],
+                          frames[i] ? seconds[i] * 1000.0 / frames[i] : 0.0, frames[i]);
+        DevLog("cycle: %s; %ld copies, %u lit", line, InterlockedCompareExchange(&g_copyCount, 0, 0), g_appliedCount);
+        for (int i = 0; i < 5; ++i) { seconds[i] = 0; frames[i] = 0; }
+    }
+}
 void StageHook(void* renderer) {
     InterlockedIncrement(&g_frame);
+    if (InterlockedCompareExchange(&g_devCycle, 0, 0)) DevCycle();
     if (InterlockedCompareExchange(&g_devFps, 0, 0)) {
         static ULONGLONG at; static LONG frames;
         ++frames;
         ULONGLONG now = GetTickCount64();
         if (!at) at = now;
         if (now - at >= 3000) {
-            DevLog("fps: %.1f (%ld copies, %u lit)", frames * 1000.0 / (now - at), InterlockedCompareExchange(&g_copyCount, 0, 0), g_appliedCount);
+            LARGE_INTEGER f; QueryPerformanceFrequency(&f);
+            const double perFrame = 1000.0 / f.QuadPart / frames;
+            DevLog("fps: %.1f (%ld copies, %u lit, %ld sdf dropped); per frame: apply %.3f ms, place %.3f ms, staging %.3f ms",
+                frames * 1000.0 / (now - at), InterlockedCompareExchange(&g_copyCount, 0, 0), g_appliedCount,
+                InterlockedCompareExchange(&g_sdfDropped, 0, 0),
+                InterlockedExchange64(&g_applyTicks, 0) * perFrame, InterlockedExchange64(&g_placeTicks, 0) * perFrame,
+                InterlockedExchange64(&g_stageTicks, 0) * perFrame);
             at = now; frames = 0;
         }
     }
+    LARGE_INTEGER t0, t1, t2;
+    QueryPerformanceCounter(&t0);
     { hot::Lease lease; if (lease) PlaceCopies(renderer); }
+    QueryPerformanceCounter(&t1);
     g_stageNext(renderer);
+    QueryPerformanceCounter(&t2);
+    InterlockedExchangeAdd64(&g_placeTicks, t1.QuadPart - t0.QuadPart);
+    InterlockedExchangeAdd64(&g_stageTicks, t2.QuadPart - t1.QuadPart);
 }
 float* ColorHookBody(float* out, uint32_t color, void* returnSite);
 float* ColorHook(float* out, uint32_t color)
@@ -492,20 +597,27 @@ float* ColorHook(float* out, uint32_t color)
     if (!lease) return g_color(out, color);
     return ColorHookBody(out, color, site);
 }
+// Group 7's colour while something is lit: gold, breathing.
+uint32_t Gold(uint32_t color)
+{
+    if (!InterlockedCompareExchange(&g_pulsing, 0, 0) || InterlockedCompareExchange(&g_devNoPulse, 0, 0)) return color;
+    float phase = static_cast<float>(GetTickCount64() % 1800) / 1800.0f;
+    float gain = 0.38f + 0.62f * (0.5f - 0.5f * std::cos(phase * 6.283185307f));
+    auto red = static_cast<uint32_t>(255 * gain);
+    auto green = static_cast<uint32_t>(205 * gain);
+    auto blue = static_cast<uint32_t>(110 * gain);
+    return 0xff000000u | (blue << 16) | (green << 8) | red;
+}
 float* ColorHookBody(float* out, uint32_t color, void* returnSite)
 {
-    void* caller = returnSite;
-    if (InterlockedCompareExchange(&g_pulsing, 0, 0) && !InterlockedCompareExchange(&g_devNoPulse, 0, 0) &&
-        (caller == g_paletteReturns[0] || caller == g_paletteReturns[1])) {
-        float phase = static_cast<float>(GetTickCount64() % 1800) / 1800.0f;
-        float gain = 0.38f + 0.62f * (0.5f - 0.5f * std::cos(phase * 6.283185307f));
-        auto red = static_cast<uint32_t>(255 * gain);
-        auto green = static_cast<uint32_t>(205 * gain);
-        auto blue = static_cast<uint32_t>(110 * gain);
-        color = 0xff000000u | (blue << 16) | (green << 8) | red;
-    }
+    if (returnSite == g_paletteReturns[0] || returnSite == g_paletteReturns[1]) color = Gold(color);
     return g_color(out, color);
 }
+// Quick Deposit's way (debug_deposit_glow): only the two palette calls for the group go through a hook.
+bool g_depositStyle;
+ColorFn g_paletteNext[2];
+float* Palette0(float* out, uint32_t color) { hot::Lease lease; return g_paletteNext[0](out, lease ? Gold(color) : color); }
+float* Palette1(float* out, uint32_t color) { hot::Lease lease; return g_paletteNext[1](out, lease ? Gold(color) : color); }
 } // namespace
 
 void Publish(const Target* targets, unsigned count) {
@@ -525,16 +637,24 @@ void SetView(void* client, const float player[3]) {
     }
 }
 static volatile LONG g_stressTest=0;
+void SetDepositStyle(bool on) { g_depositStyle = on; }
 void SetThroughWalls(int mode) { InterlockedExchange(&g_throughWalls, mode); }
 int ThroughWalls() { return static_cast<int>(InterlockedCompareExchange(&g_throughWalls, 0, 0)); }
 void SetDevSwitch(int which, bool on) {
     if (which == 3) InterlockedExchange(&g_devFps, on);
     else if (which == 1) InterlockedExchange(&g_devNoPulse, on);
+    else if (which == 4) InterlockedExchange(&g_devAlwaysMove, on);
+    else if (which == 5) InterlockedExchange(&g_devKeepSdf, on);
+    else if (which == 6) InterlockedExchange(&g_devJitter, on);
+    else if (which == 7) {
+        InterlockedExchange(&g_devCycle, on);
+        if (!on) { InterlockedExchange(&g_throughWalls, 0); InterlockedExchange(&g_devKeepSdf, 0); InterlockedExchange(&g_devJitter, 0); }
+    }
 }
 void SetStressTest(bool enabled) { InterlockedExchange(&g_stressTest,enabled?1:0); }
 void DrawSilhouettes() {
     silhouette::Snapshot snapshots[256];unsigned count=0;
-    unsigned limit=InterlockedCompareExchange(&g_stressTest,0,0)?256:16;
+    unsigned limit=InterlockedCompareExchange(&g_stressTest,0,0)?256:g_depositStyle?64:16; // Quick Deposit draws up to 64
     AcquireSRWLockShared(&g_lock);
     if(g_count && GetTickCount64()-g_published<2000)
         for(unsigned i=0;i<g_appliedCount && count<limit;++i)
@@ -601,6 +721,8 @@ bool Init() {
     g_create=reinterpret_cast<CreateFn>(FindUnique("40 55 57 41 54 41 56 41 57 48 83 EC 30"));
     g_transform=reinterpret_cast<TransformFn>(FindUnique("48 8B C4 44 88 48 20 4C 89 40 18 55"));
     g_delete=reinterpret_cast<DeleteFn>(FindUnique("48 89 6C 24 20 57 41 54 41 56 48 83 EC 30"));
+    g_sdfDelete=reinterpret_cast<SdfDeleteFn>(FindUnique("85 D2 0F 84 ?? ?? ?? ?? 89 54 24 10 4C 8B DC 49 89 4B 08 55 53 56 49 8D 6B C8 48 81 EC 20 01 00 00 4C 8B 01 8B C2 48 8B F1 25 FF FF 0F 00"));
+    if (!g_sdfDelete) DevLog("native: the distance-field delete was not found; through-wall copies keep theirs");
     g_bind=reinterpret_cast<BindFn>(FindUnique("48 89 5C 24 18 48 89 6C 24 20 56 41 54 41 57 48 83 EC 20 45 33 E4"));
     g_upload=reinterpret_cast<UploadFn>(FindUnique("48 8B C4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 88 48 81 EC 78 01 00 00 4C 8B 71 18"));
     if (!g_create || !g_transform || !g_delete || !g_bind || !g_upload) {
@@ -613,6 +735,16 @@ bool Init() {
     g_instance = reinterpret_cast<InstanceFn>(instance);
     g_paletteReturns[0] = palette1 + 8;
     g_paletteReturns[1] = palette2 + 8;
+    if (g_depositStyle) {
+        InterlockedExchange(&g_throughWalls, 2);
+        g_paletteNext[0] = reinterpret_cast<ColorFn>(RedirectCall(palette1 + 3, reinterpret_cast<void*>(&Palette0)));
+        g_paletteNext[1] = reinterpret_cast<ColorFn>(RedirectCall(palette2 + 3, reinterpret_cast<void*>(&Palette1)));
+        if (!g_paletteNext[0] || !g_paletteNext[1]) {
+            Log("native: could not redirect the palette calls at %p / %p", palette1, palette2);
+            return false;
+        }
+        Log("native: debug_deposit_glow is on: lit the way Quick Deposit lights chests (no 3D copies, no staging hook, HUD silhouette through walls)");
+    } else {
     // Relocate the RIP-relative scalar load in the color converter's 14-byte prologue.
     uint8_t prologue[20] = {0x40,0x53,0x48,0x83,0xec,0x70,0x48,0xb8};
     int32_t displacement; hot::Read(color + 10, &displacement, 4);
@@ -630,6 +762,7 @@ bool Init() {
     if (uint8_t* stage = FindUnique("49 8B CC E8 ?? ?? ?? ?? 49 83 BC 24 38 0A 00 00 00 74"))
         g_stageNext = reinterpret_cast<UploadFn>(RedirectCall(stage + 3, reinterpret_cast<void*>(&StageHook)));
     Log("native: through-wall copies %s", g_stageNext ? "placed before staging" : "placed with the model systems (staging call not found)");
+    }
     g_ready = HookNext(next);
     Log("native: %s; dynamic %p, static %p",g_ready ? "renderer pulse ready" : "hook failed",reinterpret_cast<void*>(g_systems[0].begin),reinterpret_cast<void*>(g_systems[1].begin));
     return g_ready;

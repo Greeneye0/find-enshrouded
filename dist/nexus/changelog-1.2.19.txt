@@ -1,0 +1,1 @@
+New debug setting for frame rate drops while things glow: add the line debug_deposit_glow = 1 to find.ini and Find lights chests, NPCs and stations exactly the way Quick Deposit lights its chests, in gold: no 3D copies, an outline on the HUD through walls. If the game runs smoothly with it, please tell us (added for HadToRegister's report).

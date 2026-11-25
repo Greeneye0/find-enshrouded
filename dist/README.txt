@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.18
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.19
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -128,6 +128,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.19
+- New debug setting for frame rate drops while things glow: add the line
+  debug_deposit_glow = 1 to find.ini and Find lights chests, NPCs and stations exactly the
+  way Quick Deposit lights its chests, in gold: no 3D copies, an outline on the HUD through
+  walls. If the game runs smoothly with it, please tell us (added for HadToRegister's
+  report).
+
 1.2.18
 - Skill search works however you open the Skills page: with H, or from the Skills tab of
   the Character, Backpack, Journal, World or any other menu page.
