@@ -65,6 +65,7 @@ are added to it) holds:
 | `exact_match`, `exact_key` | `0`, `Ctrl+E, Pad:Y` | the Exact match checkbox (saved when you switch it in the search box) and what switches it |
 | `through_walls` | `glow` | how lit chests, NPCs and stations show through walls: `glow` (a glowing 3D copy), `icon` (a marker over each, lighter on the graphics card) or `silhouette` (an outline on the HUD) |
 | `debug_deposit_glow` | not in the file | debug: add `debug_deposit_glow = 1` and Find lights things the way Quick Deposit lights its chests, in gold: no 3D copies, an outline on the HUD through walls |
+| `debug_fps_test` | not in the file | debug: add `debug_fps_test = 1` and after each search Find keeps the glow on for about two minutes, switches its parts off one at a time and writes each one's frame rate to `find.log` |
 
 Restart the game after changing them.
 

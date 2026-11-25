@@ -1,0 +1,1 @@
+New debug setting for frame rate drops while things glow: add the line debug_fps_test = 1 to find.ini. After a search Find keeps the glow on for about two minutes, switches its parts off one at a time and writes the frame rate of each to find.log.

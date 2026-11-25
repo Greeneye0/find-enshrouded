@@ -169,7 +169,10 @@ bool DrawOne(const Snapshot& s,const Mesh& mesh,const ui::ProjectionFrame& camer
 
 }
 }
+unsigned g_lastOutlines,g_lastVertices;
+void LastDraw(unsigned& outlines,unsigned& vertices){outlines=g_lastOutlines;vertices=g_lastVertices;g_lastOutlines=g_lastVertices=0;}
 void Draw(const Snapshot* snapshots,unsigned count){
+    if(!count)return;
     ui::ProjectionFrame camera;if(!ui::CaptureProjection(camera))return;
     count=std::min(count,256u);
 
@@ -194,6 +197,7 @@ void Draw(const Snapshot* snapshots,unsigned count){
         }
         drawn+=smooth_highlight::Project(found->second,s.transform,camera,0xff6ecdff,s.alpha*pulse,batch)?1:0;
     }
+    g_lastOutlines=drawn;g_lastVertices=static_cast<unsigned>(batch.vertices.size());
     ui::DrawMesh(batch);
 }
 }

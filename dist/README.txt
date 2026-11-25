@@ -1,4 +1,4 @@
-FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.19
+FIND - BASE STORAGE SEARCH  -  Enshrouded mod, version 1.2.20
 =============================================================
 
 Press Shift+F in your base, type what you are looking for, and the chests that hold it
@@ -128,6 +128,13 @@ GOOD TO KNOW
 
 CHANGES
 -------
+1.2.20
+- New debug setting for frame rate drops while things glow: add the line
+  debug_fps_test = 1 to find.ini. After a search Find then keeps the glow on for about
+  two minutes, switches its parts off one at a time (pulse, HUD outline, compass
+  markers, chests, NPCs and stations, 3D copies) and writes the frame rate of each to
+  find.log. Stand still with the lit things in view, then post find.log.
+
 1.2.19
 - New debug setting for frame rate drops while things glow: add the line
   debug_deposit_glow = 1 to find.ini and Find lights chests, NPCs and stations exactly the

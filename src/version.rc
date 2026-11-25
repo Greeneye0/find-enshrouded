@@ -14,9 +14,9 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "Find - Base Storage Search (Enshrouded mod)"
-            VALUE "FileVersion", "1.2.19"
+            VALUE "FileVersion", "1.2.20"
             VALUE "ProductName", "Find - Base Storage Search"
-            VALUE "ProductVersion", "1.2.19"
+            VALUE "ProductVersion", "1.2.20"
             VALUE "OriginalFilename", "wsock32.dll"
             VALUE "Comments", "Proxy DLL: forwards every Winsock call to the Windows wsock32.dll"
         END

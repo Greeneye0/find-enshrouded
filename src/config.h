@@ -19,6 +19,7 @@ struct Config {
     GlowTimes glow;
     bool exactMatch = false; // only names holding the whole text, not its words one by one
     int throughWalls = 0;    // what shows a lit chest, NPC or station through walls: 0 glow (3D copy), 1 icon, 2 HUD silhouette
+    bool fpsTest = false;     // debug_fps_test = 1 (not written to find.ini): after a search, measure the frame rate with parts of the glow off
     bool depositGlow = false; // debug_deposit_glow = 1 (not written to find.ini): light things the way Quick Deposit does
 };
 

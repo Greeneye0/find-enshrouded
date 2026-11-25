@@ -49,6 +49,7 @@
 #include "match.h"
 #include "nativehighlight.h"
 #include "scan.h"
+#include "silhouette.h"
 #include "skills.h"
 #include "strings.h"
 #include "ui.h"
@@ -191,6 +192,11 @@ void ShareFound(bool newSearch)
     ReleaseSRWLockExclusive(&g_shareLock);
 }
 ULONGLONG g_glowsStart = 0;
+std::vector<uint32_t> g_crafterGlows; // the NPCs and stations among g_glows (the frame rate test leaves them or the chests out)
+bool g_depositGlow = false;           // find.ini debug_deposit_glow = 1
+bool g_fpsTest = false;               // find.ini debug_fps_test = 1
+volatile LONG64 g_tickTicks, g_hudTicks; // time in Find's per-frame work and in its HUD drawing
+volatile LONG g_hudCalls;
 ULONGLONG g_lastGlowDraw = 0;
 
 bool g_nativeReady = false;
@@ -1993,9 +1999,12 @@ bool Search(const std::string& text, bool picked = false)
     for (uint32_t c : placed)
         if (std::find(chests.begin(), chests.end(), c) == chests.end())
             chests.push_back(c);
+    g_crafterGlows.clear();
     for (uint32_t c : crafters)
-        if (std::find(chests.begin(), chests.end(), c) == chests.end())
+        if (std::find(chests.begin(), chests.end(), c) == chests.end()) {
             chests.push_back(c);
+            g_crafterGlows.push_back(c);
+        }
     StartGlows(chests);
     SetFoundItems(items);
     DevLog("  matched: %s", matched.c_str());
@@ -2504,6 +2513,8 @@ void DrawGlows()
         return;
     }
     g_lastGlowDraw = now;
+    const unsigned off = nativehighlight::DebugOff();
+    if (off & nativehighlight::kOffAll) { nativehighlight::Clear(); return; } // the frame rate test: Find does nothing this while
     float player[3];
     bool havePlayer = PlayerPosition(player);
     if (!havePlayer) { EndSearch(); return; }
@@ -2537,6 +2548,10 @@ void DrawGlows()
         ULONGLONG left = g_glowsUntil - now;
         if (left < kFadeOutMs)
             alpha *= static_cast<float>(left) / kFadeOutMs;
+        if (off & (nativehighlight::kOffCrafters | nativehighlight::kOffChests)) {
+            const bool crafter = std::find(g_crafterGlows.begin(), g_crafterGlows.end(), g.chest) != g_crafterGlows.end();
+            if (off & (crafter ? nativehighlight::kOffCrafters : nativehighlight::kOffChests)) { ++i; continue; }
+        }
         targets.push_back({g.chest, {g.pos[0], g.pos[1], g.pos[2]}, alpha});
         ++i;
     }
@@ -2612,6 +2627,8 @@ void DrawCompass()
 {
     if (g_glows.empty() || Screen() != kScreenPlaying)
         return;
+    if (nativehighlight::DebugOff() & (nativehighlight::kOffCompass | nativehighlight::kOffAll))
+        return;
     auto* client = static_cast<uint8_t*>(ui::Client());
     HWND window = GameWindow();
     RECT r{};
@@ -2660,6 +2677,133 @@ void SafeDrawGlows()
     }
 }
 
+// find.ini debug_fps_test = 1 (HadToRegister, 2026-11-25: 57 fps fell to 12-23 with anything lit, with and without the 3D
+// copies, and nothing here reproduces it). After a search the glow is held on and the test goes through the states below,
+// 4 s each, three rounds; the first second of a state isn't counted. Each state's frame rate and the time Find's own code
+// took per frame go to find.log, so one search and two minutes of standing still tell which part costs.
+struct FpsState { const char* name; unsigned off; };
+const FpsState kFpsStates[] = {
+    {"everything on", 0},
+    {"steady colour (no pulse)", nativehighlight::kOffPulse},
+    {"no HUD outline", nativehighlight::kOffOutline},
+    {"no compass markers", nativehighlight::kOffCompass},
+    {"chests only (NPCs and stations not lit)", nativehighlight::kOffCrafters},
+    {"NPCs and stations only (chests not lit)", nativehighlight::kOffChests},
+    {"the game's own highlight colour (group 6, no gold)", nativehighlight::kOffGold},
+    {"nothing lit in the 3D scene (HUD outline and compass only)", nativehighlight::kOffGroup},
+    {"everything off (search still active)", nativehighlight::kOffAll},
+    {"no 3D copies (as through_walls = silhouette)", nativehighlight::kOffCopies},
+};
+constexpr int kFpsStateCount = sizeof(kFpsStates) / sizeof(kFpsStates[0]);
+constexpr ULONGLONG kFpsStateMs = 4000, kFpsSettleMs = 1000;
+constexpr int kFpsRounds = 3;
+struct FpsSum { double seconds, tick, hud, update, worst; long frames, hudCalls, updates, ends; };
+struct FpsTest {
+    ULONGLONG search = 0, started = 0, entered = 0; // the search (g_glowsStart) tested, when, and when this state began
+    int state = -1, round = 0, states = 0;
+    LARGE_INTEGER last{};
+    FpsSum now{}, total[kFpsStateCount]{};
+    unsigned outlines = 0, vertices = 0;
+    long paused = 0; // frames longer than a second (a menu, a loading screen, the window in the background): not counted
+    nativehighlight::DebugTimes seen{};
+} g_fps;
+
+void FpsLine(const char* label, const char* name, const FpsSum& s, double freq)
+{
+    if (!s.frames || s.seconds <= 0) { Log("fps test: %s%s: no frames counted", label, name); return; }
+    const double perFrame = 1000.0 / freq / s.frames;
+    Log("fps test: %s%s: %.1f fps (%ld frames, slowest %.0f ms); Find per frame: search and keys %.3f ms, HUD drawing %.3f ms in %.1f calls, models %.3f ms in %.1f updates of %.0f system runs",
+        label, name, s.frames / s.seconds, s.frames, s.worst * 1000.0, s.tick * perFrame, s.hud * perFrame,
+        static_cast<double>(s.hudCalls) / s.frames, s.update * 1000.0 / s.frames, static_cast<double>(s.updates) / s.frames,
+        static_cast<double>(s.ends) / s.frames);
+}
+
+void FpsTestEnd(const char* why)
+{
+    LARGE_INTEGER f; QueryPerformanceFrequency(&f);
+    nativehighlight::SetDebugOff(0);
+    InterlockedExchange64(&g_devHoldUntil, 0);
+    if (g_glowsUntil) g_glowsUntil = GetTickCount64() + (std::min)(g_glowLifetimeMs, 10000ULL); // the glow ends as usual from here
+    Log("fps test: %s. All rounds together:", why);
+    for (int i = 0; i < g_fps.states; ++i)
+        FpsLine("  ", kFpsStates[i].name, g_fps.total[i], static_cast<double>(f.QuadPart));
+    g_fps.state = -1;
+}
+
+void FpsTestFrame(LARGE_INTEGER now)
+{
+    FpsTest& t = g_fps;
+    LARGE_INTEGER f; QueryPerformanceFrequency(&f);
+    // This frame's share of Find's own time, taken every frame so a state starts from zero.
+    const LONG64 tick = InterlockedExchange64(&g_tickTicks, 0), hud = InterlockedExchange64(&g_hudTicks, 0);
+    const LONG hudCalls = InterlockedExchange(&g_hudCalls, 0);
+    const nativehighlight::DebugTimes times = nativehighlight::TakeDebugTimes();
+    const ULONGLONG ms = GetTickCount64();
+    if (t.state < 0) {
+        if (g_glows.empty() || g_glowsStart == t.search || g_open) { t.last = now; return; }
+        t = FpsTest{};
+        t.search = g_glowsStart;
+        t.started = ms;
+        t.states = nativehighlight::ThroughWalls() == 0 ? kFpsStateCount : kFpsStateCount - 1; // the last state is about copies
+        const ULONGLONG length = kFpsStateMs * t.states * kFpsRounds;
+        InterlockedExchange64(&g_devHoldUntil, static_cast<LONG64>(ms + length + 1000)); // reaching a chest doesn't end its glow
+        g_glowsUntil = (std::max)(g_glowsUntil, ms + length + 5000);
+        RECT r{};
+        if (HWND w = GameWindow()) GetClientRect(w, &r);
+        DISPLAY_DEVICEA card{};
+        card.cb = sizeof(card);
+        for (DWORD i = 0; EnumDisplayDevicesA(nullptr, i, &card, 0); ++i)
+            if (card.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) break;
+        Log("fps test: graphics card: %s", card.DeviceString[0] ? card.DeviceString : "unknown");
+        Log("fps test: started, %d states of %llu s, %d rounds (%llu s): stand still and keep the lit things in view. %zu lit (%zu NPCs and stations), through_walls %d%s, window %ld x %ld",
+            t.states, kFpsStateMs / 1000, kFpsRounds, length / 1000, g_glows.size(), g_crafterGlows.size(),
+            nativehighlight::ThroughWalls(), g_depositGlow ? ", debug_deposit_glow" : "", r.right, r.bottom);
+    }
+    if (g_glows.empty()) { FpsTestEnd("the search ended before the test was through"); t.last = now; return; }
+    const ULONGLONG at = ms - t.started;
+    const int index = static_cast<int>(at / kFpsStateMs);
+    const int state = index % t.states;
+    if (index / t.states != t.round || state != t.state) {
+        if (t.state >= 0) {
+            char label[32];
+            snprintf(label, sizeof(label), "round %d, ", t.round + 1);
+            FpsLine(label, kFpsStates[t.state].name, t.now, static_cast<double>(f.QuadPart));
+            Log("fps test:   %u lit in the scene, %ld copies, %u HUD outlines with %u vertices, %ld frames left out (longer than 1 s)",
+                t.seen.lit, t.seen.copies, t.outlines, t.vertices, t.paused);
+            FpsSum& sum = t.total[t.state];
+            sum.seconds += t.now.seconds; sum.tick += t.now.tick; sum.hud += t.now.hud; sum.update += t.now.update;
+            sum.worst = (std::max)(sum.worst, t.now.worst);
+            sum.frames += t.now.frames; sum.hudCalls += t.now.hudCalls; sum.updates += t.now.updates; sum.ends += t.now.ends;
+        }
+        if (index >= t.states * kFpsRounds) { FpsTestEnd("done"); t.last = now; return; }
+        t.round = index / t.states;
+        t.state = state;
+        t.entered = ms;
+        t.now = FpsSum{};
+        t.outlines = t.vertices = 0;
+        t.paused = 0;
+        nativehighlight::SetDebugOff(kFpsStates[state].off);
+    } else if (ms - t.entered >= kFpsSettleMs) {
+        const double dt = static_cast<double>(now.QuadPart - t.last.QuadPart) / f.QuadPart;
+        if (dt > 1.0) { ++t.paused; t.last = now; return; }
+        t.now.seconds += dt;
+        t.now.worst = (std::max)(t.now.worst, dt);
+        ++t.now.frames;
+        t.now.tick += static_cast<double>(tick);
+        t.now.hud += static_cast<double>(hud);
+        t.now.hudCalls += hudCalls;
+        t.now.update += times.updateSeconds;
+        t.now.updates += times.updates;
+        t.now.ends += times.iteratorEnds;
+        t.seen = times;
+        unsigned outlines, vertices;
+        silhouette::LastDraw(outlines, vertices);
+        t.outlines = (std::max)(t.outlines, outlines);
+        t.vertices = (std::max)(t.vertices, vertices);
+    }
+    t.last = now;
+}
+
 void PlayStateHookBody(void* self);
 void PlayStateHook(void* self)
 {
@@ -2672,7 +2816,12 @@ void PlayStateHookBody(void* self)
     // The native dialog participates in UI input routing. Let the game's normal
     // menu pass run afterward rather than leaving Find as the final UI consumer.
     // Live verification must cover subsequent menus as well as closing Find.
+    LARGE_INTEGER t0, t1;
+    QueryPerformanceCounter(&t0);
     SafeTick();
+    QueryPerformanceCounter(&t1);
+    InterlockedExchangeAdd64(&g_tickTicks, t1.QuadPart - t0.QuadPart);
+    if (g_fpsTest) FpsTestFrame(t1);
     g_originalPlayState(self);
 }
 
@@ -2998,7 +3147,12 @@ void SpatialMarkersHookBody(void* state, void* arg)
     if(g_profileActive)QueryPerformanceCounter(&begin);
     g_originalSpatial(state, arg);
     if(g_profileActive)QueryPerformanceCounter(&overlayBegin);
+    LARGE_INTEGER h0, h1;
+    QueryPerformanceCounter(&h0);
     SafeDrawGlows();
+    QueryPerformanceCounter(&h1);
+    InterlockedExchangeAdd64(&g_hudTicks, h1.QuadPart - h0.QuadPart);
+    InterlockedIncrement(&g_hudCalls);
     if(g_profileActive){
         QueryPerformanceCounter(&end);
         if(g_profileLast.QuadPart && g_profileCount<20000)g_profileFrames[g_profileCount++]={1000.0*(begin.QuadPart-g_profileLast.QuadPart)/g_profileFrequency.QuadPart,1000.0*(end.QuadPart-overlayBegin.QuadPart)/g_profileFrequency.QuadPart};
@@ -3101,6 +3255,10 @@ bool Init(const Config& config)
     recipes::ReadLayout();
     nativehighlight::SetThroughWalls(config.throughWalls);
     nativehighlight::SetDepositStyle(config.depositGlow);
+    g_fpsTest = config.fpsTest;
+    g_depositGlow = config.depositGlow;
+    if (g_fpsTest)
+        Log("debug_fps_test is on: after each search Find measures the frame rate for about 2 minutes, switching parts of the glow off in turn (the glow stays on meanwhile)");
     greeneye::hints::Init(hot::host);
     g_glowLifetimeMs = static_cast<ULONGLONG>(config.glow.glowSeconds * 1000.0f);
     g_arrivedMeters = config.glow.nearMeters;

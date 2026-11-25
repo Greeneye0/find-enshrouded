@@ -90,6 +90,10 @@ Applied g_applied[kMax]{};
 unsigned g_appliedCount;
 bool g_ready;
 volatile LONG g_pulsing;
+volatile LONG g_debugOff;     // DebugOff bits (debug_fps_test)
+volatile LONG g_iteratorEnds; // model system iterations ended, whether or not Find did anything
+volatile LONG g_updates;      // ...of which Find's update ran
+inline unsigned Off() { return static_cast<unsigned>(InterlockedCompareExchange(&g_debugOff, 0, 0)); }
 thread_local bool g_inHook;
 
 template<class T> T Read(const void* p, size_t off = 0) {
@@ -278,7 +282,9 @@ double Nearest(const double eye[3]) {
 volatile LONG g_throughWalls;
 volatile LONG g_devNoPulse; // dev switch for the performance tests
 int UpdateProxy(Applied& a, uint8_t* source) {
-    if (LONG mode = InterlockedCompareExchange(&g_throughWalls, 0, 0)) { RemoveProxy(a); return mode == 2 ? -1 : 0; }
+    LONG mode = InterlockedCompareExchange(&g_throughWalls, 0, 0);
+    if (!mode && (Off() & (kOffCopies | kOffGroup | kOffGold))) mode = 2; // the frame rate test: this state has no copies
+    if (mode) { RemoveProxy(a); return mode == 2 ? -1 : 0; }
     if (!g_create || !g_transform || !g_delete || !g_bind) return -1;
     auto resource = Read<uint8_t*>(source, 0x108);
     auto asset = resource ? Read<uint8_t*>(resource, 0x38) : nullptr;
@@ -360,6 +366,7 @@ void Apply(void* iter, void* view, const System& system) {
         slots[k].renderer = renderer;
         slots[k].frame = frame;
         InterlockedIncrement(&g_applies);
+        InterlockedIncrement(&g_updates);
     }
     // Render jobs can use column views with no registry in state+0x30. The
     // client render registry is separate from the authoritative inventory one.
@@ -370,7 +377,9 @@ void Apply(void* iter, void* view, const System& system) {
     // The outer SEH wrapper must release this lock on a memory-layout mismatch.
     __try {
         ULONGLONG now = GetTickCount64();
+        const unsigned off = Off();
         bool active = g_count && now - g_published < 2000;
+        const uint8_t group = off & kOffGold ? 6 : kGroup;
         uint32_t handles[kMax]{};
         float alphas[kMax]{};
         unsigned count = 0;
@@ -426,7 +435,12 @@ void Apply(void* iter, void* view, const System& system) {
             if (a.instance != instance) continue;
             // Let interaction/placement highlights take precedence over Find.
             if (instance[0x78] != 0 && instance[0x78] != a.last) continue;
-            Set(renderer, handles[i], kGroup);
+            if (off & kOffGroup) { // the frame rate test: everything else goes on, but the model isn't lit
+                if (instance[0x78] && instance[0x78] == a.last) Set(renderer, handles[i], a.before == 6 || a.before == 7 ? 0 : a.before);
+            } else {
+                Set(renderer, handles[i], group);
+                a.last = group;
+            }
             a.haveSilhouette=false;
             if (LONG epoch = InterlockedCompareExchange(&g_epoch, 0, 0); a.epoch != epoch) { RemoveProxy(a); a.epoch = epoch; }
             if (UpdateProxy(a,instance) >= 0) continue; // its copy shows it through walls (or it's right in view): no silhouette
@@ -486,6 +500,7 @@ bool NextHookBody(void* iter, void* view, uint32_t size, const System* system)
     }
     QueryPerformanceCounter(&t1);
     InterlockedExchangeAdd64(&g_applyTicks, t1.QuadPart - t0.QuadPart);
+    InterlockedIncrement(&g_iteratorEnds);
     g_inHook = false;
     return next;
 }
@@ -601,6 +616,7 @@ float* ColorHook(float* out, uint32_t color)
 uint32_t Gold(uint32_t color)
 {
     if (!InterlockedCompareExchange(&g_pulsing, 0, 0) || InterlockedCompareExchange(&g_devNoPulse, 0, 0)) return color;
+    if (Off() & kOffPulse) return 0xff4b8db0u; // steady: the pulse's middle
     float phase = static_cast<float>(GetTickCount64() % 1800) / 1800.0f;
     float gain = 0.38f + 0.62f * (0.5f - 0.5f * std::cos(phase * 6.283185307f));
     auto red = static_cast<uint32_t>(255 * gain);
@@ -638,6 +654,20 @@ void SetView(void* client, const float player[3]) {
 }
 static volatile LONG g_stressTest=0;
 void SetDepositStyle(bool on) { g_depositStyle = on; }
+void SetDebugOff(unsigned mask) { InterlockedExchange(&g_debugOff, static_cast<LONG>(mask)); }
+unsigned DebugOff() { return Off(); }
+DebugTimes TakeDebugTimes() {
+    LARGE_INTEGER f; QueryPerformanceFrequency(&f);
+    DebugTimes t{};
+    t.updateSeconds = static_cast<double>(InterlockedExchange64(&g_applyTicks, 0)) / f.QuadPart;
+    t.updates = InterlockedExchange(&g_updates, 0);
+    t.iteratorEnds = InterlockedExchange(&g_iteratorEnds, 0);
+    AcquireSRWLockShared(&g_lock);
+    t.lit = g_appliedCount;
+    ReleaseSRWLockShared(&g_lock);
+    t.copies = InterlockedCompareExchange(&g_copyCount, 0, 0);
+    return t;
+}
 void SetThroughWalls(int mode) { InterlockedExchange(&g_throughWalls, mode); }
 int ThroughWalls() { return static_cast<int>(InterlockedCompareExchange(&g_throughWalls, 0, 0)); }
 void SetDevSwitch(int which, bool on) {
@@ -653,6 +683,7 @@ void SetDevSwitch(int which, bool on) {
 }
 void SetStressTest(bool enabled) { InterlockedExchange(&g_stressTest,enabled?1:0); }
 void DrawSilhouettes() {
+    if (Off() & kOffOutline) { silhouette::Draw(nullptr, 0); return; }
     silhouette::Snapshot snapshots[256];unsigned count=0;
     unsigned limit=InterlockedCompareExchange(&g_stressTest,0,0)?256:g_depositStyle?64:16; // Quick Deposit draws up to 64
     AcquireSRWLockShared(&g_lock);
